@@ -21,40 +21,40 @@ from accuracy import AccuracyTest
 
 from train_test import train, evaluate
 
-DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu' #'cpu'
+DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
-dataset = PingDataset(cvat_xml_dir='dataset_test', sequence_len=30, data_samples_dir='dataset_test/data_samples')
+void_let_serve = True
+# dataset = PingDataset(cvat_xml_dir='dataset_test', sequence_len=30, data_samples_dir='dataset_test/data_samples', void_let_serve=void_let_serve)
 
-# dataset = PingDataset(npy_dir='dataset_test/data_samples', sequence_len=100)
+# dataset = PingDataset(npy_dir='dataset_test/data_samples', sequence_len=30)
 
 # dataset.animate_sequence(index=4000, destination_dir='dataset_test/animation', save_mp4=True)
 # dataset.animate_sample(file='ygfdz.npy', destination_dir='dataset_test/animation', save_mp4=True, nb_frames=100)
 
-# batch_size = 64
-# sequence_len = 30
+batch_size = 64
+sequence_len = 30
 
-# dataset = PingDataset(npy_dir='dataset_test/data_samples', sequence_len=sequence_len)
+dataset = PingDataset(npy_dir='dataset_test/data_samples', sequence_len=sequence_len, void_let_serve=void_let_serve)
 
-# train_dataset, test_dataset = dataset.train_test_dataset(n_samples=1024)
+train_dataset, test_dataset = dataset.train_test_dataset(n_samples=64)
 
-# train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-# test_dataloader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
+train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+test_dataloader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
 
+# model = Model_1(sequence_len=sequence_len, return_as_one=True).to(DEVICE)
+# x_test = torch.rand(sequence_len, 93).to(DEVICE)
+# print(model(x_test))
 
-# # model = Model_1(sequence_len=sequence_len, return_as_one=True).to(DEVICE)
-# # x_test = torch.rand(sequence_len, 93).to(DEVICE)
-# # print(model(x_test))
-
-# model = Model_1(sequence_len=sequence_len, return_as_one=False).to(DEVICE)
-# # x_test = torch.rand(batch_size, sequence_len, 93).to(DEVICE)
-# # print(adapt_output_1(*model(x_test)))
+model = Model_1(sequence_len=sequence_len, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
+x_test = torch.rand(batch_size, sequence_len, 93).to(DEVICE)
+print(adapt_output_1(*model(x_test), void_let_serve))
 # # print(model(x_test)[-1])
 
 # # model = Model_2(sequence_len=sequence_len, return_as_one=True).to(DEVICE)
 # # x_test = torch.rand(sequence_len, 93).to(DEVICE)
 # # print(model(x_test))
 
-# # model = Model_2(sequence_len=sequence_len, return_as_one=False).to(DEVICE)
+# model = Model_2(sequence_len=sequence_len, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
 # # x_test = torch.rand(batch_size, sequence_len, 93).to(DEVICE)
 # # print(adapt_output_2(*model(x_test)))
 
@@ -62,18 +62,18 @@ dataset = PingDataset(cvat_xml_dir='dataset_test', sequence_len=30, data_samples
 
 # optimizer = torch.optim.Adam(model.parameters())
 
-# loss_function = Loss_1()
-# loss_function = Loss_2()
+# loss_function = Loss_1(void_let_serve=void_let_serve)
+# # loss_function = Loss_2(void_let_serve=void_let_serve)
 
 # train(model=model, loss_function=loss_function, optimizer=optimizer, n_epochs=1,
-        # train_dataloader=train_dataloader, test_dataloader=test_dataloader)
+#         train_dataloader=train_dataloader, test_dataloader=test_dataloader)
 
-# torch.save(model, 'models/model_2_test.pt')
+# # torch.save(model, 'models/model_2_test.pt')
 
 
-# model = torch.load('models/model_1_test.pt')
+# # model = torch.load('models/model_1_test.pt')
 
-# accuracy = AccuracyTest(sequence_len=sequence_len, adapt=adapt_output_1)
+# accuracy = AccuracyTest(sequence_len=sequence_len, adapt=adapt_output_1, void_let_serve=void_let_serve)
 # evaluate(model, test_dataloader, accuracy)
 
 # event_detection, event_identification = accuracy.metrics()

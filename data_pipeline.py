@@ -24,7 +24,8 @@ from cvat_xml import BallTrack, TableTrack, PersonTrack, EventSequence
     
 class PingDataset(Dataset):
     
-    def __init__(self, sequence_len: int=None, output_len: int=None, output_offset: int=None, sequence_gap: int=None, cvat_xml_dir: str=None, npy_dir: str=None, data_samples_dir: str=None):
+    def __init__(self, sequence_len: int=None, output_len: int=None, output_offset: int=None, sequence_gap: int=None,
+                 cvat_xml_dir: str=None, npy_dir: str=None, data_samples_dir: str=None, void_let_serve: bool=True):
         """
         Parameters
         ----------
@@ -53,6 +54,9 @@ class PingDataset(Dataset):
         data_samples_dir : str
             Path of the directory where to store the samples.
             The default is None.
+        void_let_serve: bool
+            Assimilate void_serve to let_serve.
+            The default is True.
         
         Raises
         ------
@@ -72,21 +76,41 @@ class PingDataset(Dataset):
         self.cvat_xml_dir = cvat_xml_dir
         self.npy_dir = npy_dir
         self.data_samples_dir = data_samples_dir
+        self.void_let_serve = void_let_serve
         
-        self.labels_map = {
-            0: "player 1",
-            1: "player 2",
-            2: "serve",
-            3: "ball pass",
-            4: "point",
-            5: "mistake",
-            6: "let serve",
-            7: "void serve",
-            8: "forehand",
-            9: "backhand"}
-        
-        self.labels_map_inverted = dict(zip(self.labels_map.values(), self.labels_map.keys()))
-        
+        if self.void_let_serve:
+            
+            self.labels_map = {
+                0: "player 1",
+                1: "player 2",
+                2: "serve",
+                3: "ball pass",
+                4: "point",
+                5: "mistake",
+                6: "let serve or void serve",
+                7: "forehand",
+                8: "backhand"}
+            
+            self.labels_map_inverted = dict(zip(self.labels_map.values(), self.labels_map.keys()))
+            self.n_events = 9
+            
+        else: 
+            
+            self.labels_map = {
+                0: "player 1",
+                1: "player 2",
+                2: "serve",
+                3: "ball pass",
+                4: "point",
+                5: "mistake",
+                6: "let serve",
+                7: "void serve",
+                8: "forehand",
+                9: "backhand"}
+            
+            self.labels_map_inverted = dict(zip(self.labels_map.values(), self.labels_map.keys()))
+            self.n_events = 10
+            
         self.nb_sequences = None
         self.nb_sequences_per_sample = None
         
@@ -116,12 +140,19 @@ class PingDataset(Dataset):
             samples = os.listdir(self.npy_dir)
             
             self.nb_sequences_per_sample = [0]
+            void_let_serve = None
             
             for sample_idx, sample in enumerate(samples):
                 
                 sample_name = sample.split('.')[0]
                 
                 sample_array = np.load(os.path.join(self.npy_dir, sample))
+
+                if void_let_serve is not None:
+                    if void_let_serve != (sample_array.shape[1] == 102):
+                        raise ValueError("Inconsistent number of events found between samples")
+                else:
+                    void_let_serve = (sample_array.shape[1] == 102)
                 
                 if sample_array.shape[0] < self.sequence_len:
                     raise ValueError("'sequence_len' value {:d} is less than {:d}, the size of sample {:s}."
@@ -130,6 +161,9 @@ class PingDataset(Dataset):
                 self.nb_sequences_per_sample.append((sample_array.shape[0] - self.sequence_len)//self.sequence_gap + 1)
                                 
             self.nb_sequences = sum(self.nb_sequences_per_sample)
+            self.void_let_serve = void_let_serve
+            
+            print("'void_let_serve' has been set to {:s} based on the samples.".format(str(void_let_serve)))
                 
         elif self.cvat_xml_dir is not None:
             
@@ -203,7 +237,7 @@ class PingDataset(Dataset):
         sequence_idx = index-sum(self.nb_sequences_per_sample[:sample_idx+1])
         sequence = sample_array[sequence_idx*self.sequence_gap : sequence_idx*self.sequence_gap + self.sequence_len]
         
-        feature, label = torch.Tensor(sequence[:, :-10]), torch.Tensor(sequence[self.output_offset : self.output_offset+self.output_len, -10:])
+        feature, label = torch.Tensor(sequence[:, :-self.n_events]), torch.Tensor(sequence[self.output_offset : self.output_offset+self.output_len, -self.n_events:])
 
         return feature, label
     
@@ -217,7 +251,7 @@ class PingDataset(Dataset):
             
         sample_array = np.load(os.path.join(self.npy_dir, sample))
 
-        feature, label = sample_array[:, :-10], sample_array[:, -10:]
+        feature, label = sample_array[:, :-self.n_events], sample_array[:, -self.n_events:]
         
         return feature, label
 
@@ -277,10 +311,15 @@ class PingDataset(Dataset):
     
         xml_outputs = ET.parse(xml_path)
         evt_sqc = EventSequence(xml_outputs)
-        event_sequence = np.zeros((nb_frames, 10))
-
+        
+        event_sequence = np.zeros((nb_frames, self.n_events))
+    
         for frame in range(nb_frames):
             for event in evt_sqc[frame]:
+                
+                if self.void_let_serve and (event == 'void serve' or event == 'let serve'):
+                    event = 'let serve or void serve'
+                
                 event_sequence[frame, self.labels_map_inverted[event]] = 1
         
         return event_sequence
@@ -346,7 +385,7 @@ class PingDataset(Dataset):
         
         plt.close()
         
-    def animate_sample(self, file: str, destination_dir: str, nb_frames: int=100, frame_offset: int=0, save_mp4: bool=True, save_gif: bool=False):
+    def animate_sample(self, file: str, destination_dir: str, nb_frames: int=90, frame_offset: int=0, save_mp4: bool=True, save_gif: bool=False):
         
         sample_array = np.load(os.path.join(self.npy_dir, file))
         
@@ -379,7 +418,7 @@ class PingDataset(Dataset):
         for i in range(1, 31):
             sample = np.concatenate((sample, data[:, 3*i:3*i+2]), axis=1)
             
-        sample = np.concatenate((sample, data[:, -10:]), axis=1)
+        sample = np.concatenate((sample, data[:, -self.n_events:]), axis=1)
         plt.ioff()
         
         player1_color = 'blue'
@@ -468,7 +507,7 @@ class PingDataset(Dataset):
             lines[31].set_data([sample[frame, 60], sample[frame, 54]], [sample[frame, 61], sample[frame, 55]])
 
             #events
-            events = self.events_vector_to_text(sample[frame, -10:])
+            events = self.events_vector_to_text(sample[frame, -self.n_events:])
             if len(events)!=0:
                 text.set_text('\n'.join(events))
 
@@ -481,9 +520,10 @@ class PingDataset(Dataset):
     def events_vector_to_text(self, vector):
         
         events = []
-        for i in range(10):
+        for i in range(self.n_events):
             if vector[i]==1:
                 events.append(self.labels_map[i])
+                
         return events
     
     def train_test_dataset(self, test_size=0.25, n_samples=-1):

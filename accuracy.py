@@ -8,13 +8,18 @@ import numpy as np
 
 class AccuracyTest():
     
-    def __init__(self, sequence_len, adapt: callable=None):
+    def __init__(self, sequence_len, adapt: callable=None, void_let_serve=True):
         
         self.sequence_len = sequence_len
         self.adapt = adapt
+        self.void_let_serve = void_let_serve
         
         self.event_detection_accuracy = np.zeros((4)) # FN, TP, TN, FP
-        self.event_identification_accuracy = np.zeros((4, self.sequence_len, 10)) # FN, TP, TN, FP
+        
+        if self.void_let_serve:
+            self.event_identification_accuracy = np.zeros((4, self.sequence_len, 9)) # FN, TP, TN, FP
+        else:    
+            self.event_identification_accuracy = np.zeros((4, self.sequence_len, 10)) # FN, TP, TN, FP
         
     def add(self, y_preds, ys):
 

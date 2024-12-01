@@ -10,7 +10,29 @@ import torch.nn as nn
 import numpy as np
 
 
-def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve):
+def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, void_let_serve=True):
+    '''
+    Transforms the output of Model_1 into a tensor similar to the dataset labels.
+
+    Parameters
+    ----------
+    y_event : TYPE
+        DESCRIPTION.
+    y_player : TYPE
+        DESCRIPTION.
+    y_hand : TYPE
+        DESCRIPTION.
+    y_point : TYPE
+        DESCRIPTION.
+    y_serve : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    '''
     
     y_event = torch.where(y_event >= 0.5, 1, 0)
     y_player = torch.where(y_player >= 0.5, 1, 0)
@@ -20,6 +42,11 @@ def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve):
 
     y = []
     
+    if void_let_serve:
+        n = 1
+    else:
+        n = 0
+    
     if len(y_event.shape) == 3:
 
         for i in range(y_event.shape[0]):
@@ -27,38 +54,42 @@ def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve):
             sample = []
             
             for j in range(y_event.shape[1]):
-            
-                sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                 
-                if y_event[i, j, 0] == 0:
-                    
+                if void_let_serve:
+                    sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+                else:
+                    sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                
+                if y_event[i, j, 0] == 0: # no stroke detected
                     sample.append(sequence)
                     
-                else:
-                    if y_player[i, j, 0] == 0:
+                else: # stroke detected and corresponding events identified
+                    if y_player[i, j, 0] == 0: #player1
                         sequence[0] = 1
-                    if y_player[i, j, 0] == 1:
+                    if y_player[i, j, 0] == 1: #player2
                         sequence[1] = 1
-                        
-                    if y_hand[i, j, 0] == 0:
-                        sequence[8] = 1
-                    if y_hand[i, j, 0] == 1:
-                        sequence[9] = 1
-                        
-                    if y_point[i, j] == 0:
-                        sequence[4] = 1
-                    if y_point[i, j] == 1:
-                        sequence[5] = 1
                     
-                    if y_serve[i, j] == 0:
-                        sequence[2] = 1
-                    if y_serve[i, j] == 1:
-                        sequence[3] = 1
-                    if y_serve[i, j] == 2:
-                        sequence[6] = 1
-                    if y_serve[i, j] == 3:
-                        sequence[7] = 1
+                    if y_hand[i, j, 0] == 0: #forehand
+                        sequence[8-n] = 1
+                    if y_hand[i, j, 0] == 1: #backhand
+                        sequence[9-n] = 1
                         
+                    if y_point[i, j] == 0: #point
+                        sequence[4] = 1
+                    if y_point[i, j] == 1: #mistake
+                        sequence[5] = 1
+                                           #None
+                    if y_serve[i, j] == 0: #serve
+                        sequence[2] = 1
+                    if y_serve[i, j] == 1: #ball pass
+                        sequence[3] = 1
+                    
+                    if y_serve[i, j] == 2: #let serve (or void_serve if mixed)
+                            sequence[6] = 1
+                    if not void_let_serve:
+                        if y_serve[i, j] == 3: #void serve
+                            sequence[7] = 1
+                                           #None
                     sample.append(sequence)
             
             y.append(sample)
@@ -69,43 +100,110 @@ def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve):
         
         for j in range(y_event.shape[0]):
             
-            sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            if void_let_serve:
+                sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+            else:
+                sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             
-            if y_event[j, 0] == 0:
+            if y_event[j, 0] == 0: # no stroke detected
             
                 y.append(sequence)
             
-            else:
+            else: # stroke detected and corresponding events identified
                 
-                if y_player[j, 0] == 0:
+                if y_player[j, 0] == 0: #player1
                     sequence[0] = 1
-                if y_player[j, 0] == 1:
+                if y_player[j, 0] == 1: #player2
                     sequence[1] = 1
                     
-                if y_hand[j, 0] == 0:
-                    sequence[8] = 1
-                if y_hand[j, 0] == 1:
-                    sequence[9] = 1
+                if y_hand[j, 0] == 0: #forehand
+                    sequence[8-n] = 1
+                if y_hand[j, 0] == 1: #backhand
+                    sequence[9-n] = 1
                     
-                if y_point[j] == 0:
+                if y_point[j] == 0: #point
                     sequence[4] = 1
-                if y_point[j] == 1:
+                if y_point[j] == 1: #mistake
                     sequence[5] = 1
-                
-                if y_serve[j] == 0:
+                                    #None
+                if y_serve[j] == 0: #serve
                     sequence[2] = 1
-                if y_serve[j] == 1:
+                if y_serve[j] == 1: #ball pass
                     sequence[3] = 1
-                if y_serve[j] == 2:
+                
+                if y_serve[j] == 2:  #let serve (or void_serve if mixed)
                     sequence[6] = 1
-                if y_serve[j] == 3:
-                    sequence[7] = 1
-                    
+                if not void_let_serve:
+                    if y_serve[j] == 3: #void serve
+                        sequence[7] = 1
+                                        #None    
                 y.append(sequence)
         
         return torch.tensor(y)
 
-def adapt_output_2(y_event, y_comb):
+comb_dict = {0: [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+             1: [1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+             2: [1, 0, 1, 0, 1, 0, 0, 0, 0, 1],
+             3: [1, 0, 1, 0, 0, 1, 0, 0, 0, 1],
+             4: [1, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+             5: [1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+             6: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+             7: [1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+             8: [1, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+             9: [1, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+             10: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+             11: [1, 0, 0, 0, 0, 0, 0, 1, 1, 0],
+             12: [0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+             13: [0, 1, 1, 0, 0, 0, 0, 0, 0, 1],
+             14: [0, 1, 1, 0, 1, 0, 0, 0, 0, 1],
+             15: [0, 1, 1, 0, 0, 1, 0, 0, 0, 1],
+             16: [0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+             17: [0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
+             18: [0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+             19: [0, 1, 1, 0, 0, 0, 0, 0, 1, 0],
+             20: [0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+             21: [0, 1, 1, 0, 0, 1, 0, 0, 1, 0],
+             22: [0, 1, 0, 0, 0, 0, 1, 0, 1, 0],
+             23: [0, 1, 0, 0, 0, 0, 0, 1, 1, 0]}
+
+comb_dict_no_void = {0: [1, 0, 0, 0, 0, 0, 0, 0, 1],
+                     1: [1, 0, 1, 0, 0, 0, 0, 0, 1],
+                     2: [1, 0, 1, 0, 1, 0, 0, 0, 1],
+                     3: [1, 0, 1, 0, 0, 1, 0, 0, 1],
+                     4: [1, 0, 0, 0, 0, 0, 1, 0, 1],
+                     5: [1, 0, 0, 0, 0, 0, 0, 1, 0],
+                     6: [1, 0, 1, 0, 0, 0, 0, 1, 0],
+                     7: [1, 0, 1, 0, 1, 0, 0, 1, 0],
+                     8: [1, 0, 1, 0, 0, 1, 0, 1, 0],
+                     9: [1, 0, 0, 0, 0, 0, 1, 1, 0],
+                     10: [0, 1, 0, 0, 0, 0, 0, 0, 1],
+                     11: [0, 1, 1, 0, 0, 0, 0, 0, 1],
+                     12: [0, 1, 1, 0, 1, 0, 0, 0, 1],
+                     13: [0, 1, 1, 0, 0, 1, 0, 0, 1],
+                     14: [0, 1, 0, 0, 0, 0, 1, 0, 1],
+                     15: [0, 1, 0, 0, 0, 0, 0, 1, 0],
+                     16: [0, 1, 1, 0, 0, 0, 0, 1, 0],
+                     17: [0, 1, 1, 0, 1, 0, 0, 1, 0],
+                     18: [0, 1, 1, 0, 0, 1, 0, 1, 0],
+                     19: [0, 1, 0, 0, 0, 0, 1, 1, 0]}
+
+def adapt_output_2(y_event, y_comb, void_let_serve=True):
+    '''
+    Transforms the output of Model_2 into a tensor similar to the dataset labels.
+
+    Parameters
+    ----------
+    y_event : TYPE
+        DESCRIPTION.
+    y_comb : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    '''
     
     y_event = torch.where(y_event >= 0.5, 1, 0)
     y_comb = torch.argmax(y_comb, dim=-1)
@@ -120,80 +218,17 @@ def adapt_output_2(y_event, y_comb):
             
             for j in range(y_event.shape[1]):
                 
-                if y_event[i, j, 0] == 0:
-                    sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-                
-                elif y_comb[i, j] == 0:
-                    sample.append([1, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-                    
-                elif y_comb[i, j] == 1 :
-                    sample.append([1, 0, 1, 0, 0, 0, 0, 0, 0, 1])
-                    
-                elif y_comb[i, j] == 2:
-                    sample.append([1, 0, 1, 0, 1, 0, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 3:
-                    sample.append([1, 0, 1, 0, 0, 1, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 4:
-                    sample.append([1, 0, 0, 0, 0, 0, 1, 0, 0, 1])
-                
-                elif y_comb[i, j] == 5:
-                    sample.append([1, 0, 0, 0, 0, 0, 0, 1, 0, 1])
-                
-                elif y_comb[i, j] == 6:
-                    sample.append([1, 0, 0, 0, 0, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 7:
-                    sample.append([1, 0, 1, 0, 0, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 8:
-                    sample.append([1, 0, 1, 0, 1, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 9:
-                    sample.append([1, 0, 1, 0, 0, 1, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 10:
-                    sample.append([1, 0, 0, 0, 0, 0, 1, 0, 1, 0])
-                
-                elif y_comb[i, j] == 11:
-                    sample.append([1, 0, 0, 0, 0, 0, 0, 1, 1, 0])
-                
-                elif y_comb[i, j] == 12:
-                    sample.append([0, 1, 0, 0, 0, 0, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 13:
-                    sample.append([0, 1, 1, 0, 0, 0, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 14:
-                    sample.append([0, 1, 1, 0, 1, 0, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 15:
-                    sample.append([0, 1, 1, 0, 0, 1, 0, 0, 0, 1])
-                
-                elif y_comb[i, j] == 16:
-                    sample.append([0, 1, 0, 0, 0, 0, 1, 0, 0, 1])
-                
-                elif y_comb[i, j] == 17:
-                    sample.append([0, 1, 0, 0, 0, 0, 0, 1, 0, 1])
-                
-                elif y_comb[i, j] == 18:
-                    sample.append([0, 1, 0, 0, 0, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 19:
-                    sample.append([0, 1, 1, 0, 0, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 20:
-                    sample.append([0, 1, 1, 0, 1, 0, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 21:
-                    sample.append([0, 1, 1, 0, 0, 1, 0, 0, 1, 0])
-                
-                elif y_comb[i, j] == 22:
-                    sample.append([0, 1, 0, 0, 0, 0, 1, 0, 1, 0])
-                
-                elif y_comb[i, j] == 23:
-                    sample.append([0, 1, 0, 0, 0, 0, 0, 1, 1, 0])
+                if y_event[i, j, 0] == 0: #no stroke detected
+                    if void_let_serve:
+                        sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
+                    else:
+                        sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) 
+            
+                else:  # stroke detected and corresponding events identified
+                    if void_let_serve:
+                        sample.append(comb_dict_no_void[y_comb[i, j]])
+                    else:
+                        sample.append(comb_dict[y_comb[i, j]])
             
             y.append(sample)
         
@@ -203,90 +238,28 @@ def adapt_output_2(y_event, y_comb):
 
         for j in range(y_event.shape[0]):
             
-            if y_event[j, 0] == 0:
-                y.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            if y_event[j, 0] == 0: #no stroke detected
+                if void_let_serve:
+                    sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
+                else:
+                    sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) 
             
-            elif y_comb[j] == 0:
-                y.append([1, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-                
-            elif y_comb[j] == 1 :
-                y.append([1, 0, 1, 0, 0, 0, 0, 0, 0, 1])
-                
-            elif y_comb[j] == 2:
-                y.append([1, 0, 1, 0, 1, 0, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 3:
-                y.append([1, 0, 1, 0, 0, 1, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 4:
-                y.append([1, 0, 0, 0, 0, 0, 1, 0, 0, 1])
-            
-            elif y_comb[j] == 5:
-                y.append([1, 0, 0, 0, 0, 0, 0, 1, 0, 1])
-            
-            elif y_comb[j] == 6:
-                y.append([1, 0, 0, 0, 0, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 7:
-                y.append([1, 0, 1, 0, 0, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 8:
-                y.append([1, 0, 1, 0, 1, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 9:
-                y.append([1, 0, 1, 0, 0, 1, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 10:
-                y.append([1, 0, 0, 0, 0, 0, 1, 0, 1, 0])
-            
-            elif y_comb[j] == 11:
-                y.append([1, 0, 0, 0, 0, 0, 0, 1, 1, 0])
-            
-            elif y_comb[j] == 12:
-                y.append([0, 1, 0, 0, 0, 0, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 13:
-                y.append([0, 1, 1, 0, 0, 0, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 14:
-                y.append([0, 1, 1, 0, 1, 0, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 15:
-                y.append([0, 1, 1, 0, 0, 1, 0, 0, 0, 1])
-            
-            elif y_comb[j] == 16:
-                y.append([0, 1, 0, 0, 0, 0, 1, 0, 0, 1])
-            
-            elif y_comb[j] == 17:
-                y.append([0, 1, 0, 0, 0, 0, 0, 1, 0, 1])
-            
-            elif y_comb[j] == 18:
-                y.append([0, 1, 0, 0, 0, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 19:
-                y.append([0, 1, 1, 0, 0, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 20:
-                y.append([0, 1, 1, 0, 1, 0, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 21:
-                y.append([0, 1, 1, 0, 0, 1, 0, 0, 1, 0])
-            
-            elif y_comb[j] == 22:
-                y.append([0, 1, 0, 0, 0, 0, 1, 0, 1, 0])
-            
-            elif y_comb[j] == 23:
-                y.append([0, 1, 0, 0, 0, 0, 0, 1, 1, 0])
+            else:  # stroke detected and corresponding events identified
+                if void_let_serve:
+                    sample.append(comb_dict_no_void[y_comb[j]])
+                else:
+                    sample.append(comb_dict[y_comb[j]])
     
     return torch.tensor(y)
     
 
 class Model_1(nn.Module):
 
-    def __init__(self, sequence_len: int, return_as_one: bool=False):
+    def __init__(self, sequence_len: int, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_1, self).__init__()
         
         self.return_as_one = return_as_one
+        self.void_let_serve = void_let_serve
         
         encoder_layer = nn.TransformerEncoderLayer(d_model=93, nhead=31)
         
@@ -295,7 +268,11 @@ class Model_1(nn.Module):
         self.linear_player = nn.Linear(in_features=93, out_features=1)
         self.linear_hand = nn.Linear(in_features=93, out_features=1)
         self.linear_point = nn.Linear(in_features=93, out_features=3)
-        self.linear_serve = nn.Linear(in_features=93, out_features=5)
+        
+        if self.void_let_serve:
+            self.linear_serve = nn.Linear(in_features=93, out_features=4)
+        else:
+            self.linear_serve = nn.Linear(in_features=93, out_features=5)
         
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-1)
@@ -311,22 +288,27 @@ class Model_1(nn.Module):
         
         if self.return_as_one:
             
-            return adapt_output_1(y_event, y_player, y_hand, y_point, y_serve)
+            return adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, self.void_let_serve)
         
         return y_event, y_player, y_hand, y_point, y_serve
     
 class Model_2(nn.Module):
 
-    def __init__(self, sequence_len: int, return_as_one: bool=False):
+    def __init__(self, sequence_len: int, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_2, self).__init__()
 
         self.return_as_one = return_as_one
+        self.void_let_serve = void_let_serve
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=93, nhead=31)
         
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
         self.linear_event = nn.Linear(in_features=93, out_features=1)
-        self.linear_comb = nn.Linear(in_features=93, out_features=24)
+        
+        if self.void_let_serve:
+            self.linear_comb = nn.Linear(in_features=93, out_features=20)
+        else:
+            self.linear_comb = nn.Linear(in_features=93, out_features=24)
         
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-1)
@@ -339,7 +321,7 @@ class Model_2(nn.Module):
         
         if self.return_as_one:
             
-            return adapt_output_2(y_event, y_comb)
+            return adapt_output_2(y_event, y_comb, self.void_let_serve)
         
         return y_event, y_comb
     

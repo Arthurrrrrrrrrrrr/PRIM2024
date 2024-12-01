@@ -61,6 +61,4 @@ def evaluate(model, test_dataloader, accuracy):
         y_pred = model(x.to(DEVICE))
         accuracy.add(y_pred, y.to(DEVICE))
 
-    print(accuracy.metrics())
-
 
