@@ -14,12 +14,12 @@ class AccuracyTest():
         self.adapt = adapt
         self.void_let_serve = void_let_serve
         
-        self.event_detection_accuracy = np.zeros((4)) # FN, TP, TN, FP
+        self.stroke_detection_accuracy = np.zeros((4)) # FN, TP, TN, FP
         
         if self.void_let_serve:
-            self.event_identification_accuracy = np.zeros((4, self.sequence_len, 9)) # FN, TP, TN, FP
+            self.stroke_identification_accuracy = np.zeros((4, self.sequence_len, 9)) # FN, TP, TN, FP
         else:    
-            self.event_identification_accuracy = np.zeros((4, self.sequence_len, 10)) # FN, TP, TN, FP
+            self.stroke_identification_accuracy = np.zeros((4, self.sequence_len, 10)) # FN, TP, TN, FP
         
     def add(self, y_preds, ys):
 
@@ -36,14 +36,14 @@ class AccuracyTest():
                     
                     if 1 in y[t]:
                         if not 1 in y_pred[t]:
-                            self.event_detection_accuracy[0] += 1
+                            self.stroke_detection_accuracy[0] += 1
                         else:
-                            self.event_detection_accuracy[1] += 1
+                            self.stroke_detection_accuracy[1] += 1
                     else:
                         if not 1 in y_pred[t]:
-                            self.event_detection_accuracy[2] += 1
+                            self.stroke_detection_accuracy[2] += 1
                         else:
-                            self.event_detection_accuracy[3] += 1
+                            self.stroke_detection_accuracy[3] += 1
                     
                     if 1 in y[t]:
                         fn = [is_fn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
@@ -51,10 +51,10 @@ class AccuracyTest():
                         tn = [is_tn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
                         fp = [is_fp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
                         
-                        self.event_identification_accuracy[0, t] += fn
-                        self.event_identification_accuracy[1, t] += tp
-                        self.event_identification_accuracy[2, t] += tn
-                        self.event_identification_accuracy[3, t] += fp
+                        self.stroke_identification_accuracy[0, t] += fn
+                        self.stroke_identification_accuracy[1, t] += tp
+                        self.stroke_identification_accuracy[2, t] += tn
+                        self.stroke_identification_accuracy[3, t] += fp
                 
         elif len(y_preds.shape) == 2:
             
@@ -62,14 +62,14 @@ class AccuracyTest():
                 
                 if 1 in y[t]:
                     if not 1 in y_pred[t]:
-                        self.event_detection_accuracy[0] += 1
+                        self.stroke_detection_accuracy[0] += 1
                     else:
-                        self.event_detection_accuracy[1] += 1
+                        self.stroke_detection_accuracy[1] += 1
                 else:
                     if not 1 in y_pred[t]:
-                        self.event_detection_accuracy[2] += 1
+                        self.stroke_detection_accuracy[2] += 1
                     else:
-                        self.event_detection_accuracy[3] += 1
+                        self.stroke_detection_accuracy[3] += 1
                 
                 if 1 in y[t]:
                     fn = [is_fn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
@@ -77,15 +77,15 @@ class AccuracyTest():
                     tn = [is_tn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
                     fp = [is_fp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
                     
-                    self.event_identification_accuracy[0, t] += fn
-                    self.event_identification_accuracy[1, t] += tp
-                    self.event_identification_accuracy[2, t] += tn
-                    self.event_identification_accuracy[3, t] += fp
+                    self.stroke_identification_accuracy[0, t] += fn
+                    self.stroke_identification_accuracy[1, t] += tp
+                    self.stroke_identification_accuracy[2, t] += tn
+                    self.stroke_identification_accuracy[3, t] += fp
 
         
     def metrics(self):
         
-        return self.event_detection_accuracy, self.event_identification_accuracy
+        return self.stroke_detection_accuracy, self.stroke_identification_accuracy
 
         
 def is_fn(y, y_pred):

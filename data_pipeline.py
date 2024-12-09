@@ -21,7 +21,9 @@ from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
 from cvat_xml import BallTrack, TableTrack, PersonTrack, EventSequence
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+
 class PingDataset(Dataset):
     
     def __init__(self, sequence_len: int=None, output_len: int=None, output_offset: int=None, sequence_gap: int=None,
@@ -92,7 +94,7 @@ class PingDataset(Dataset):
                 8: "backhand"}
             
             self.labels_map_inverted = dict(zip(self.labels_map.values(), self.labels_map.keys()))
-            self.n_events = 9
+            self.n_strokes = 9
             
         else: 
             
@@ -109,7 +111,7 @@ class PingDataset(Dataset):
                 9: "backhand"}
             
             self.labels_map_inverted = dict(zip(self.labels_map.values(), self.labels_map.keys()))
-            self.n_events = 10
+            self.n_strokes = 10
             
         self.nb_sequences = None
         self.nb_sequences_per_sample = None
@@ -150,7 +152,7 @@ class PingDataset(Dataset):
 
                 if void_let_serve is not None:
                     if void_let_serve != (sample_array.shape[1] == 102):
-                        raise ValueError("Inconsistent number of events found between samples")
+                        raise ValueError("Inconsistent number of strokes found between samples")
                 else:
                     void_let_serve = (sample_array.shape[1] == 102)
                 
@@ -224,6 +226,15 @@ class PingDataset(Dataset):
         else:
             raise ValueError("At least 'cvat_xml_dir' or 'npy_dir' must be provided.")
         
+        # store the samples in GPU memory
+        
+        self.samples = []
+        
+        samples_names = os.listdir(self.npy_dir)
+        for sample_name in samples_names:
+            sample_array = np.load(os.path.join(self.npy_dir, sample_name))
+            self.samples.append(torch.tensor(sample_array).type(torch.float).to(DEVICE))
+
     def __len__(self):
         
         return self.nb_sequences
@@ -231,13 +242,13 @@ class PingDataset(Dataset):
     def __getitem__(self, index):
         
         sample_idx = np.argmax([1 if sum(self.nb_sequences_per_sample[:i+1])<=index<=sum(self.nb_sequences_per_sample[:i+2])-1 else 0 for i in range(len(self.nb_sequences_per_sample)-1)])
-        sample = os.listdir(self.npy_dir)[sample_idx]
-        sample_array = np.load(os.path.join(self.npy_dir, sample))
         
+        sample_tensor = self.samples[sample_idx]
+
         sequence_idx = index-sum(self.nb_sequences_per_sample[:sample_idx+1])
-        sequence = sample_array[sequence_idx*self.sequence_gap : sequence_idx*self.sequence_gap + self.sequence_len]
+        sequence = sample_tensor[sequence_idx*self.sequence_gap : sequence_idx*self.sequence_gap + self.sequence_len]
         
-        feature, label = torch.Tensor(sequence[:, :-self.n_events]), torch.Tensor(sequence[self.output_offset : self.output_offset+self.output_len, -self.n_events:])
+        feature, label = sequence[:, :-self.n_strokes], sequence[self.output_offset : self.output_offset+self.output_len, -self.n_strokes:]
 
         return feature, label
     
@@ -251,7 +262,7 @@ class PingDataset(Dataset):
             
         sample_array = np.load(os.path.join(self.npy_dir, sample))
 
-        feature, label = sample_array[:, :-self.n_events], sample_array[:, -self.n_events:]
+        feature, label = sample_array[:, :-self.n_strokes], sample_array[:, -self.n_strokes:]
         
         return feature, label
 
@@ -312,17 +323,17 @@ class PingDataset(Dataset):
         xml_outputs = ET.parse(xml_path)
         evt_sqc = EventSequence(xml_outputs)
         
-        event_sequence = np.zeros((nb_frames, self.n_events))
+        stroke_sequence = np.zeros((nb_frames, self.n_strokes))
     
         for frame in range(nb_frames):
-            for event in evt_sqc[frame]:
+            for stroke in evt_sqc[frame]:
                 
-                if self.void_let_serve and (event == 'void serve' or event == 'let serve'):
-                    event = 'let serve or void serve'
+                if self.void_let_serve and (stroke == 'void serve' or stroke == 'let serve'):
+                    stroke = 'let serve or void serve'
                 
-                event_sequence[frame, self.labels_map_inverted[event]] = 1
+                stroke_sequence[frame, self.labels_map_inverted[stroke]] = 1
         
-        return event_sequence
+        return stroke_sequence
 
     def sequence_cut(self, sample_array):
         
@@ -418,7 +429,7 @@ class PingDataset(Dataset):
         for i in range(1, 31):
             sample = np.concatenate((sample, data[:, 3*i:3*i+2]), axis=1)
             
-        sample = np.concatenate((sample, data[:, -self.n_events:]), axis=1)
+        sample = np.concatenate((sample, data[:, -self.n_strokes:]), axis=1)
         plt.ioff()
         
         player1_color = 'blue'
@@ -506,10 +517,10 @@ class PingDataset(Dataset):
             lines[30].set_data([sample[frame, 58], sample[frame, 60]], [sample[frame, 59], sample[frame, 61]])
             lines[31].set_data([sample[frame, 60], sample[frame, 54]], [sample[frame, 61], sample[frame, 55]])
 
-            #events
-            events = self.events_vector_to_text(sample[frame, -self.n_events:])
-            if len(events)!=0:
-                text.set_text('\n'.join(events))
+            #strokes
+            strokes = self.strokes_vector_to_text(sample[frame, -self.n_strokes:])
+            if len(strokes)!=0:
+                text.set_text('\n'.join(strokes))
 
             return scat, *lines
         
@@ -517,24 +528,24 @@ class PingDataset(Dataset):
         
         return anim
     
-    def events_vector_to_text(self, vector):
+    def strokes_vector_to_text(self, vector):
         
-        events = []
-        for i in range(self.n_events):
+        strokes = []
+        for i in range(self.n_strokes):
             if vector[i]==1:
-                events.append(self.labels_map[i])
+                strokes.append(self.labels_map[i])
                 
-        return events
+        return strokes
     
-    def train_test_dataset(self, test_size=0.25, n_samples=-1):
+    def train_validation_dataset(self, validation_size=0.25, n_samples=-1):
 
         if n_samples > len(self):
             raise ValueError("n_samples cannot be greater than the dataset size")
             
-        train_idx, test_idx = train_test_split(list(range(len(self))), test_size=test_size)
-        train_dataset, test_dataset = Subset(self, train_idx[:n_samples]), Subset(self, test_idx[:n_samples])
+        train_idx, validation_idx = train_test_split(list(range(len(self))), test_size=validation_size)
+        train_dataset, validation_dataset = Subset(self, train_idx[:n_samples]), Subset(self, validation_idx[:int(n_samples*validation_size) if n_samples !=-1 else -1])
         
-        return train_dataset, test_dataset
+        return train_dataset, validation_dataset
         
     @staticmethod
     def transform_inputs(objects_points, rotate=True, scale_min_max=True):

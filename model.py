@@ -10,13 +10,13 @@ import torch.nn as nn
 import numpy as np
 
 
-def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, void_let_serve=True):
+def adapt_output_1(y_stroke, y_player, y_hand, y_point, y_serve, void_let_serve=True):
     '''
     Transforms the output of Model_1 into a tensor similar to the dataset labels.
 
     Parameters
     ----------
-    y_event : TYPE
+    y_stroke : TYPE
         DESCRIPTION.
     y_player : TYPE
         DESCRIPTION.
@@ -34,7 +34,7 @@ def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, void_let_serve=T
 
     '''
     
-    y_event = torch.where(y_event >= 0.5, 1, 0)
+    y_stroke = torch.where(y_stroke >= 0.5, 1, 0)
     y_player = torch.where(y_player >= 0.5, 1, 0)
     y_hand = torch.where(y_hand >= 0.5, 1, 0)
     y_point = torch.argmax(y_point, dim=-1)
@@ -46,100 +46,53 @@ def adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, void_let_serve=T
         n = 1
     else:
         n = 0
-    
-    if len(y_event.shape) == 3:
 
-        for i in range(y_event.shape[0]):
-            
-            sample = []
-            
-            for j in range(y_event.shape[1]):
-                
-                if void_let_serve:
-                    sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-                else:
-                    sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                
-                if y_event[i, j, 0] == 0: # no stroke detected
-                    sample.append(sequence)
-                    
-                else: # stroke detected and corresponding events identified
-                    if y_player[i, j, 0] == 0: #player1
-                        sequence[0] = 1
-                    if y_player[i, j, 0] == 1: #player2
-                        sequence[1] = 1
-                    
-                    if y_hand[i, j, 0] == 0: #forehand
-                        sequence[8-n] = 1
-                    if y_hand[i, j, 0] == 1: #backhand
-                        sequence[9-n] = 1
-                        
-                    if y_point[i, j] == 0: #point
-                        sequence[4] = 1
-                    if y_point[i, j] == 1: #mistake
-                        sequence[5] = 1
-                                           #None
-                    if y_serve[i, j] == 0: #serve
-                        sequence[2] = 1
-                    if y_serve[i, j] == 1: #ball pass
-                        sequence[3] = 1
-                    
-                    if y_serve[i, j] == 2: #let serve (or void_serve if mixed)
-                            sequence[6] = 1
-                    if not void_let_serve:
-                        if y_serve[i, j] == 3: #void serve
-                            sequence[7] = 1
-                                           #None
-                    sample.append(sequence)
-            
-            y.append(sample)
+    for i in range(y_stroke.shape[0]):
         
-        return torch.tensor(y)
-    
-    elif len(y_event.shape) == 2:
+        sample = []
         
-        for j in range(y_event.shape[0]):
+        for j in range(y_stroke.shape[1]):
             
             if void_let_serve:
                 sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0]
             else:
                 sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
             
-            if y_event[j, 0] == 0: # no stroke detected
-            
-                y.append(sequence)
-            
-            else: # stroke detected and corresponding events identified
+            if y_stroke[i, j, 0] == 0: # no stroke detected
+                sample.append(sequence)
                 
-                if y_player[j, 0] == 0: #player1
+            else: # stroke detected and corresponding strokes identified
+                if y_player[i, j, 0] == 0: #player1
                     sequence[0] = 1
-                if y_player[j, 0] == 1: #player2
+                if y_player[i, j, 0] == 1: #player2
                     sequence[1] = 1
-                    
-                if y_hand[j, 0] == 0: #forehand
+                
+                if y_hand[i, j, 0] == 0: #forehand
                     sequence[8-n] = 1
-                if y_hand[j, 0] == 1: #backhand
+                if y_hand[i, j, 0] == 1: #backhand
                     sequence[9-n] = 1
                     
-                if y_point[j] == 0: #point
+                if y_point[i, j] == 0: #point
                     sequence[4] = 1
-                if y_point[j] == 1: #mistake
+                if y_point[i, j] == 1: #mistake
                     sequence[5] = 1
-                                    #None
-                if y_serve[j] == 0: #serve
+                                       #None
+                if y_serve[i, j] == 0: #serve
                     sequence[2] = 1
-                if y_serve[j] == 1: #ball pass
+                if y_serve[i, j] == 1: #ball pass
                     sequence[3] = 1
                 
-                if y_serve[j] == 2:  #let serve (or void_serve if mixed)
-                    sequence[6] = 1
+                if y_serve[i, j] == 2: #let serve (or void_serve if mixed)
+                        sequence[6] = 1
                 if not void_let_serve:
-                    if y_serve[j] == 3: #void serve
+                    if y_serve[i, j] == 3: #void serve
                         sequence[7] = 1
-                                        #None    
-                y.append(sequence)
+                                       #None
+                sample.append(sequence)
         
-        return torch.tensor(y)
+        y.append(sample)
+    
+    return torch.tensor(y)
 
 comb_dict = {0: [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
              1: [1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
@@ -187,13 +140,13 @@ comb_dict_no_void = {0: [1, 0, 0, 0, 0, 0, 0, 0, 1],
                      18: [0, 1, 1, 0, 0, 1, 0, 1, 0],
                      19: [0, 1, 0, 0, 0, 0, 1, 1, 0]}
 
-def adapt_output_2(y_event, y_comb, void_let_serve=True):
+def adapt_output_2(y_stroke, y_comb, void_let_serve=True):
     '''
     Transforms the output of Model_2 into a tensor similar to the dataset labels.
 
     Parameters
     ----------
-    y_event : TYPE
+    y_stroke : TYPE
         DESCRIPTION.
     y_comb : TYPE
         DESCRIPTION.
@@ -205,82 +158,65 @@ def adapt_output_2(y_event, y_comb, void_let_serve=True):
 
     '''
     
-    y_event = torch.where(y_event >= 0.5, 1, 0)
+    y_stroke = torch.where(y_stroke >= 0.5, 1, 0)
     y_comb = torch.argmax(y_comb, dim=-1)
     
     y = []
     
-    if len(y_event.shape) == 3:
-
-        for i in range(y_event.shape[0]):
-            
-            sample = []
-            
-            for j in range(y_event.shape[1]):
-                
-                if y_event[i, j, 0] == 0: #no stroke detected
-                    if void_let_serve:
-                        sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
-                    else:
-                        sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) 
-            
-                else:  # stroke detected and corresponding events identified
-                    if void_let_serve:
-                        sample.append(comb_dict_no_void[y_comb[i, j]])
-                    else:
-                        sample.append(comb_dict[y_comb[i, j]])
-            
-            y.append(sample)
+    for i in range(y_stroke.shape[0]):
         
-        return torch.tensor(y)
-    
-    if len(y_event.shape) == 2:
-
-        for j in range(y_event.shape[0]):
+        sample = []
+        
+        for j in range(y_stroke.shape[1]):
             
-            if y_event[j, 0] == 0: #no stroke detected
+            if y_stroke[i, j, 0] == 0: #no stroke detected
                 if void_let_serve:
                     sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
                 else:
                     sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) 
-            
-            else:  # stroke detected and corresponding events identified
+        
+            else:  # stroke detected and corresponding strokes identified
                 if void_let_serve:
-                    sample.append(comb_dict_no_void[y_comb[j]])
+                    sample.append(comb_dict_no_void[y_comb[i, j].item()])
                 else:
-                    sample.append(comb_dict[y_comb[j]])
+                    sample.append(comb_dict[y_comb[i, j]])
+        
+        y.append(sample)
     
     return torch.tensor(y)
     
 
 class Model_1(nn.Module):
 
-    def __init__(self, sequence_len: int, return_as_one: bool=False, void_let_serve: bool=True):
+    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_1, self).__init__()
         
         self.return_as_one = return_as_one
         self.void_let_serve = void_let_serve
         
-        encoder_layer = nn.TransformerEncoderLayer(d_model=93, nhead=31)
+        self.linear_embedding = nn.Linear(in_features=93, out_features=d_model)
         
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
-        self.linear_event = nn.Linear(in_features=93, out_features=1)
-        self.linear_player = nn.Linear(in_features=93, out_features=1)
-        self.linear_hand = nn.Linear(in_features=93, out_features=1)
-        self.linear_point = nn.Linear(in_features=93, out_features=3)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=n_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        self.linear_stroke = nn.Linear(in_features=d_model, out_features=1)
+        self.linear_player = nn.Linear(in_features=d_model, out_features=1)
+        self.linear_hand = nn.Linear(in_features=d_model, out_features=1)
+        self.linear_point = nn.Linear(in_features=d_model, out_features=3)
         
         if self.void_let_serve:
-            self.linear_serve = nn.Linear(in_features=93, out_features=4)
+            self.linear_serve = nn.Linear(in_features=d_model, out_features=4)
         else:
-            self.linear_serve = nn.Linear(in_features=93, out_features=5)
+            self.linear_serve = nn.Linear(in_features=d_model, out_features=5)
         
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
         
+        x = self.linear_embedding(x)
         x = self.transformer_encoder(x)
-        y_event = self.sigmoid(self.linear_event(x))
+        y_stroke = self.sigmoid(self.linear_stroke(x))
         y_player = self.sigmoid(self.linear_player(x))
         y_hand = self.sigmoid(self.linear_hand(x))
         y_point = self.softmax(self.linear_point(x))
@@ -288,42 +224,45 @@ class Model_1(nn.Module):
         
         if self.return_as_one:
             
-            return adapt_output_1(y_event, y_player, y_hand, y_point, y_serve, self.void_let_serve)
+            return adapt_output_1(y_stroke, y_player, y_hand, y_point, y_serve, self.void_let_serve)
         
-        return y_event, y_player, y_hand, y_point, y_serve
+        return y_stroke, y_player, y_hand, y_point, y_serve
     
 class Model_2(nn.Module):
 
-    def __init__(self, sequence_len: int, return_as_one: bool=False, void_let_serve: bool=True):
+    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_2, self).__init__()
 
         self.return_as_one = return_as_one
         self.void_let_serve = void_let_serve
-
-        encoder_layer = nn.TransformerEncoderLayer(d_model=93, nhead=31)
         
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
-        self.linear_event = nn.Linear(in_features=93, out_features=1)
+        self.linear_embedding = nn.Linear(in_features=93, out_features=d_model)
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=n_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        self.linear_stroke = nn.Linear(in_features=d_model, out_features=1)
         
         if self.void_let_serve:
-            self.linear_comb = nn.Linear(in_features=93, out_features=20)
+            self.linear_comb = nn.Linear(in_features=d_model, out_features=20)
         else:
-            self.linear_comb = nn.Linear(in_features=93, out_features=24)
+            self.linear_comb = nn.Linear(in_features=d_model, out_features=24)
         
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
         
+        x = self.linear_embedding(x)
         x = self.transformer_encoder(x)
-        y_event = self.sigmoid(self.linear_event(x))
+        y_stroke = self.sigmoid(self.linear_stroke(x))
         y_comb = self.softmax(self.linear_comb(x))
         
         if self.return_as_one:
             
-            return adapt_output_2(y_event, y_comb, self.void_let_serve)
+            return adapt_output_2(y_stroke, y_comb, self.void_let_serve)
         
-        return y_event, y_comb
+        return y_stroke, y_comb
     
     
     
