@@ -5,6 +5,7 @@ Created on Tue Oct 29 13:26:59 2024
 @author: anuvo
 """
 
+import time
 import torch
 import warnings
 import os
@@ -234,6 +235,21 @@ class PingDataset(Dataset):
         for sample_name in samples_names:
             sample_array = np.load(os.path.join(self.npy_dir, sample_name))
             self.samples.append(torch.tensor(sample_array).type(torch.float).to(DEVICE))
+            
+        # # test full store
+        # samples_names = os.listdir(self.npy_dir)
+        # self.features, self.labels = [], []
+        
+        # for sample_idx, sample_name in enumerate(samples_names):
+        #     sample_array = np.load(os.path.join(self.npy_dir, sample_name))
+        #     sample_tensor = torch.tensor(sample_array).type(torch.float)
+            
+        #     for sequence_idx in range(self.nb_sequences_per_sample[sample_idx+1]):
+        #         sequence = sample_tensor[sequence_idx*self.sequence_gap : sequence_idx*self.sequence_gap + self.sequence_len]
+            
+        #         self.features.append(sequence[:, :-self.n_strokes])
+        #         self.labels.append(sequence[self.output_offset : self.output_offset+self.output_len, -self.n_strokes:])
+            
 
     def __len__(self):
         
@@ -249,7 +265,10 @@ class PingDataset(Dataset):
         sequence = sample_tensor[sequence_idx*self.sequence_gap : sequence_idx*self.sequence_gap + self.sequence_len]
         
         feature, label = sequence[:, :-self.n_strokes], sequence[self.output_offset : self.output_offset+self.output_len, -self.n_strokes:]
-
+        
+        # feature = self.features[index]
+        # label = self.labels[index]
+        
         return feature, label
     
     def get_sample(self, sample: str):
