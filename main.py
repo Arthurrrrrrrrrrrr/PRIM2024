@@ -33,7 +33,7 @@ torch.cuda.empty_cache()
 # dataset = PingDataset(cvat_xml_dir='dataset', sequence_len=30, data_samples_dir='dataset/data_samples', void_let_serve=void_let_serve)
 dataset = PingDataset(npy_dir='dataset/data_samples', sequence_len=sequence_len, void_let_serve=void_let_serve)
 
-train_dataset, validation_dataset = dataset.train_validation_dataset(n_samples=-1)
+train_dataset, validation_dataset = dataset.train_validation_dataset(n_samples=1024)
 
 train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
 validation_dataloader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=True)
@@ -78,17 +78,17 @@ loss_function = Loss_1(void_let_serve=void_let_serve)
 
 # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
-train_loss_list, validation_loss_list, lr_list= train(model=model, loss_function=loss_function, optimizer=optimizer, n_epochs=1,
+train_loss_list, validation_loss_list, lr_list= train(model=model, loss_function=loss_function, optimizer=optimizer, n_epochs=100,
                                                                                     training_dataloader=train_dataloader, validation_dataloader=validation_dataloader,
                                                                                     scheduler=None)
 
 # torch.save(model, 'models/model_1_over_training_0.1.pt')
 
 
-# accuracy = AccuracyTest(sequence_len=sequence_len, adapt=adapt_output_1, void_let_serve=void_let_serve)
-# evaluate(model, validation_dataloader, accuracy)
+accuracy = AccuracyTest(sequence_len=sequence_len, void_let_serve=void_let_serve)
+evaluate(model, validation_dataloader, accuracy)
 
-# stroke_detection, stroke_identification = accuracy.metrics()
+stroke_detection, stroke_identification = accuracy.metrics()
 
 # print(stroke_detection)
 # print(stroke_identification[1])

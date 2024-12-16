@@ -11,88 +11,71 @@ import numpy as np
 
 
 def adapt_output_1(y_stroke, y_player, y_hand, y_point, y_serve, void_let_serve=True):
-    '''
+    """
     Transforms the output of Model_1 into a tensor similar to the dataset labels.
 
-    Parameters
+    Parameters:
     ----------
-    y_stroke : TYPE
-        DESCRIPTION.
-    y_player : TYPE
-        DESCRIPTION.
-    y_hand : TYPE
-        DESCRIPTION.
-    y_point : TYPE
-        DESCRIPTION.
-    y_serve : TYPE
-        DESCRIPTION.
+    y_stroke : torch.Tensor
+        Stroke detection predictions (batch_size, seq_len, 1).
+    y_player : torch.Tensor
+        Player predictions (batch_size, seq_len, 1).
+    y_hand : torch.Tensor
+        Hand predictions (batch_size, seq_len, 1).
+    y_point : torch.Tensor
+        Point type predictions (batch_size, seq_len, num_classes=3).
+    y_serve : torch.Tensor
+        Serve type predictions (batch_size, seq_len, num_classes=4 or 5, depending on void_let_serve).
 
-    Returns
+    Returns:
     -------
-    TYPE
-        DESCRIPTION.
+    torch.Tensor
+        Output tensor with labels of shape (batch_size, seq_len, label_dim).
+    """
+    # Threshold binary predictions
+    y_stroke = (y_stroke >= 0.5).long()
+    y_player = (y_player >= 0.5).long()
+    y_hand = (y_hand >= 0.5).long()
 
-    '''
-    
-    y_stroke = torch.where(y_stroke >= 0.5, 1, 0)
-    y_player = torch.where(y_player >= 0.5, 1, 0)
-    y_hand = torch.where(y_hand >= 0.5, 1, 0)
+    # Get class indices for multi-class outputs
     y_point = torch.argmax(y_point, dim=-1)
     y_serve = torch.argmax(y_serve, dim=-1)
 
-    y = []
-    
-    if void_let_serve:
-        n = 1
-    else:
-        n = 0
+    # Predefine n_classes based on void_let_serve
+    n_classes = 9 if void_let_serve else 10
 
-    for i in range(y_stroke.shape[0]):
-        
-        sample = []
-        
-        for j in range(y_stroke.shape[1]):
-            
-            if void_let_serve:
-                sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-            else:
-                sequence = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-            
-            if y_stroke[i, j, 0] == 0: # no stroke detected
-                sample.append(sequence)
-                
-            else: # stroke detected and corresponding strokes identified
-                if y_player[i, j, 0] == 0: #player1
-                    sequence[0] = 1
-                if y_player[i, j, 0] == 1: #player2
-                    sequence[1] = 1
-                
-                if y_hand[i, j, 0] == 0: #forehand
-                    sequence[8-n] = 1
-                if y_hand[i, j, 0] == 1: #backhand
-                    sequence[9-n] = 1
-                    
-                if y_point[i, j] == 0: #point
-                    sequence[4] = 1
-                if y_point[i, j] == 1: #mistake
-                    sequence[5] = 1
-                                       #None
-                if y_serve[i, j] == 0: #serve
-                    sequence[2] = 1
-                if y_serve[i, j] == 1: #ball pass
-                    sequence[3] = 1
-                
-                if y_serve[i, j] == 2: #let serve (or void_serve if mixed)
-                        sequence[6] = 1
-                if not void_let_serve:
-                    if y_serve[i, j] == 3: #void serve
-                        sequence[7] = 1
-                                       #None
-                sample.append(sequence)
-        
-        y.append(sample)
+    # Initialize the output tensor with zeros
+    batch_size, seq_len = y_stroke.shape[:2]
+    output = torch.zeros((batch_size, seq_len, n_classes), dtype=torch.long, device=y_stroke.device)
     
-    return torch.tensor(y)
+    # Create masks for stroke detection
+    stroke_mask = y_stroke.squeeze(-1) == 1
+    indices = torch.nonzero(stroke_mask, as_tuple=True)  # Get (batch_idx, seq_idx) for stroke_mask
+
+    # Assign player information (Player 1 and Player 2)
+    output[indices[0], indices[1], 0] = (y_player[indices[0], indices[1], 0] == 0).long()  # Player 1
+    output[indices[0], indices[1], 1] = (y_player[indices[0], indices[1], 0] == 1).long()  # Player 2
+
+    # Assign point outcomes (Point and Mistake)
+    output[indices[0], indices[1], 4] = (y_point[indices[0], indices[1]] == 0).long()  # Point
+    output[indices[0], indices[1], 5] = (y_point[indices[0], indices[1]] == 1).long()  # Mistake
+
+    # Assign serve outcomes (Serve, Ball Pass, Let Serve, Void Serve)
+    output[indices[0], indices[1], 2] = (y_serve[indices[0], indices[1]] == 0).long()  # Serve
+    output[indices[0], indices[1], 3] = (y_serve[indices[0], indices[1]] == 1).long()  # Ball Pass
+    output[indices[0], indices[1], 6] = (y_serve[indices[0], indices[1]] == 2).long()  # Let Serve
+   
+    # Assign hand information (Forehand and Backhand)
+    if void_let_serve:
+        output[indices[0], indices[1], 7] = (y_hand[indices[0], indices[1], 0] == 0).long()  # Forehand
+        output[indices[0], indices[1], 8] = (y_hand[indices[0], indices[1], 0] == 1).long()  # Backhand
+    else:
+        output[indices[0], indices[1], 7] = (y_serve[indices[0], indices[1]] == 3).long()  # Void Serve
+        output[indices[0], indices[1], 8] = (y_hand[indices[0], indices[1], 0] == 0).long()  # Forehand
+        output[indices[0], indices[1], 9] = (y_hand[indices[0], indices[1], 0] == 1).long()  # Backhand
+
+    return output
+
 
 comb_dict = {0: [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
              1: [1, 0, 1, 0, 0, 0, 0, 0, 0, 1],
@@ -146,44 +129,44 @@ def adapt_output_2(y_stroke, y_comb, void_let_serve=True):
 
     Parameters
     ----------
-    y_stroke : TYPE
-        DESCRIPTION.
-    y_comb : TYPE
-        DESCRIPTION.
+    y_stroke : torch.Tensor
+        Stroke detection predictions (batch_size, seq_len, 1).
+    y_comb : torch.Tensor
+        Combined class predictions (batch_size, seq_len, num_classes).
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
-
+    torch.Tensor
+        Output tensor with labels of shape (batch_size, seq_len, label_dim).
     '''
-    
-    y_stroke = torch.where(y_stroke >= 0.5, 1, 0)
+    # Binarize stroke predictions
+    y_stroke = (y_stroke >= 0.5).long()
+
+    # Get class indices for multi-class combined outputs
     y_comb = torch.argmax(y_comb, dim=-1)
-    
-    y = []
-    
-    for i in range(y_stroke.shape[0]):
-        
-        sample = []
-        
-        for j in range(y_stroke.shape[1]):
-            
-            if y_stroke[i, j, 0] == 0: #no stroke detected
-                if void_let_serve:
-                    sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0])
-                else:
-                    sample.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) 
-        
-            else:  # stroke detected and corresponding strokes identified
-                if void_let_serve:
-                    sample.append(comb_dict_no_void[y_comb[i, j].item()])
-                else:
-                    sample.append(comb_dict[y_comb[i, j]])
-        
-        y.append(sample)
-    
-    return torch.tensor(y)
+
+    # Define the dictionary for label encoding based on `void_let_serve`
+    if void_let_serve:
+        label_dict = torch.tensor(list(comb_dict_no_void.values()), device=y_stroke.device)
+    else:
+        label_dict = torch.tensor(list(comb_dict.values()), device=y_stroke.device)
+
+    # Initialize output tensor with zeros
+    batch_size, seq_len = y_stroke.shape[:2]
+    label_dim = label_dict.shape[1]
+    output = torch.zeros((batch_size, seq_len, label_dim), dtype=torch.long, device=y_stroke.device)
+
+    # Mask for detected strokes
+    stroke_mask = y_stroke.squeeze(-1) == 1
+    indices = torch.nonzero(stroke_mask, as_tuple=True)  # (batch_idx, seq_idx)
+
+    # Map `y_comb` indices to label values
+    comb_labels = label_dict[y_comb[indices[0], indices[1]]]
+
+    # Assign the corresponding labels for detected strokes
+    output[indices[0], indices[1]] = comb_labels
+
+    return output
     
 
 class Model_1(nn.Module):

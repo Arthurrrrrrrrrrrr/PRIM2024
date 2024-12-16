@@ -4,117 +4,54 @@ Created on Mon Nov 11 19:00:45 2024
 
 @author: anuvo
 """
-import numpy as np
+import torch
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class AccuracyTest():
     
-    def __init__(self, sequence_len, adapt: callable=None, void_let_serve=True):
+    def __init__(self, sequence_len, void_let_serve=True):
         
         self.sequence_len = sequence_len
-        self.adapt = adapt
         self.void_let_serve = void_let_serve
         
-        self.stroke_detection_accuracy = np.zeros((4)) # FN, TP, TN, FP
+        self.stroke_detection_accuracy = torch.zeros((4)).to(DEVICE) # FN, TP, TN, FP
         
         if self.void_let_serve:
-            self.stroke_identification_accuracy = np.zeros((4, self.sequence_len, 9)) # FN, TP, TN, FP
+            self.stroke_identification_accuracy = torch.zeros((4, self.sequence_len, 9)).to(DEVICE) # FN, TP, TN, FP
         else:    
-            self.stroke_identification_accuracy = np.zeros((4, self.sequence_len, 10)) # FN, TP, TN, FP
+            self.stroke_identification_accuracy = torch.zeros((4, self.sequence_len, 10)).to(DEVICE) # FN, TP, TN, FP
         
-    def add(self, y_preds, ys):
-
-        if self.adapt is not None:
-            y_preds = self.adapt(*y_preds)
-      
-        if len(y_preds.shape) == 3:
-
-            for i in range(y_preds.shape[0]):
-                
-                y_pred, y = y_preds[i], ys[i]      
-            
-                for t in range(self.sequence_len):
-                    
-                    if 1 in y[t]:
-                        if not 1 in y_pred[t]:
-                            self.stroke_detection_accuracy[0] += 1
-                        else:
-                            self.stroke_detection_accuracy[1] += 1
-                    else:
-                        if not 1 in y_pred[t]:
-                            self.stroke_detection_accuracy[2] += 1
-                        else:
-                            self.stroke_detection_accuracy[3] += 1
-                    
-                    if 1 in y[t]:
-                        fn = [is_fn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
-                        tp = [is_tp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
-                        tn = [is_tn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
-                        fp = [is_fp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[2])]
-                        
-                        self.stroke_identification_accuracy[0, t] += fn
-                        self.stroke_identification_accuracy[1, t] += tp
-                        self.stroke_identification_accuracy[2, t] += tn
-                        self.stroke_identification_accuracy[3, t] += fp
-                
-        elif len(y_preds.shape) == 2:
-            
-            for t in range(self.sequence_len):
-                
-                if 1 in y[t]:
-                    if not 1 in y_pred[t]:
-                        self.stroke_detection_accuracy[0] += 1
-                    else:
-                        self.stroke_detection_accuracy[1] += 1
-                else:
-                    if not 1 in y_pred[t]:
-                        self.stroke_detection_accuracy[2] += 1
-                    else:
-                        self.stroke_detection_accuracy[3] += 1
-                
-                if 1 in y[t]:
-                    fn = [is_fn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
-                    tp = [is_tp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
-                    tn = [is_tn(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
-                    fp = [is_fp(y[t, k], y_pred[t, k]) for k in range(y_preds.shape[1])]
-                    
-                    self.stroke_identification_accuracy[0, t] += fn
-                    self.stroke_identification_accuracy[1, t] += tp
-                    self.stroke_identification_accuracy[2, t] += tn
-                    self.stroke_identification_accuracy[3, t] += fp
-
+    def add(self, y_pred, y):
+    
+        # Binary stroke detection: presence of any stroke in a time step
+        stroke_present = (y.sum(axis=-1) > 0).int() # Shape: (batch_size, seq_len)
+        pred_stroke_present = (y_pred.sum(axis=-1) > 0).int()  # Shape: (batch_size, seq_len)
+    
+        # Stroke detection accuracy: FN, TP, TN, FP
+        self.stroke_detection_accuracy[0] += torch.sum((stroke_present == 1) & (pred_stroke_present == 0))  # FN
+        self.stroke_detection_accuracy[1] += torch.sum((stroke_present == 1) & (pred_stroke_present == 1))  # TP
+        self.stroke_detection_accuracy[2] += torch.sum((stroke_present == 0) & (pred_stroke_present == 0))  # TN
+        self.stroke_detection_accuracy[3] += torch.sum((stroke_present == 0) & (pred_stroke_present == 1))  # FP
+    
+        # Stroke identification accuracy metrics
+        fn = ((y == 1) & (y_pred == 0))  # FN
+        tp = ((y == 1) & (y_pred == 1))  # TP
+        tn = ((y == 0) & (y_pred == 0))  # TN
+        fp = ((y == 0) & (y_pred == 1))  # FP
+    
+    
+        # Update metrics for stroke identification
+        self.stroke_identification_accuracy[0] += fn.sum(axis=0)  # FN
+        self.stroke_identification_accuracy[1] += tp.sum(axis=0)  # TP
+        self.stroke_identification_accuracy[2] += tn.sum(axis=0)  # TN
+        self.stroke_identification_accuracy[3] += fp.sum(axis=0)  # FP
         
     def metrics(self):
         
         return self.stroke_detection_accuracy, self.stroke_identification_accuracy
 
-        
-def is_fn(y, y_pred):
-    
-    if y == 1 and y_pred == 0:
-        return 1
-    else:
-        return 0
-   
-def is_tp(y, y_pred):
-    
-    if y == 1 and y_pred == 1:
-        return 1
-    else:
-        return 0
-   
-def is_tn(y, y_pred):
-    
-    if y == 0 and y_pred == 0:
-        return 1
-    else:
-        return 0
-   
-def is_fp(y, y_pred):
-    
-    if y == 0 and y_pred == 1:
-        return 1
-    else:
-        return 0
+
         
         
         
