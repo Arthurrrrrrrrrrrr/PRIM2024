@@ -18,7 +18,7 @@ import matplotlib as mpl
 import pandas as pd
 import numpy as np
 
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset, Subset, DataLoader
 from sklearn.model_selection import train_test_split
 from cvat_xml import BallTrack, TableTrack, PersonTrack, EventSequence
 
@@ -364,7 +364,7 @@ class PingDataset(Dataset):
             
         return sequences
     
-    def animate_sequence(self, index: int, destination_dir: str, nb_frames: int=None, frame_offset: int=None, save_mp4: bool=True, save_gif: bool=False):
+    def animate_sequence(self, features, labels, index: int, destination_dir: str, nb_frames: int=None, frame_offset: int=None, save_mp4: bool=True, save_gif: bool=False):
         
         if nb_frames is None:
             nb_frames = self.sequence_len
@@ -388,12 +388,8 @@ class PingDataset(Dataset):
             raise ValueError("nb_frames + frame_offset of {:d} cannot be greater than sequence_len of {:d}."
                              .format(nb_frames+frame_offset, self.sequence_len))
         
-        sample_idx = np.argmax([1 if sum(self.nb_sequences_per_sample[:i+1])<=index<=sum(self.nb_sequences_per_sample[:i+2])-1 else 0 for i in range(len(self.nb_sequences_per_sample)-1)])
-        sample = os.listdir(self.npy_dir)[sample_idx]
-        sample_array = np.load(os.path.join(self.npy_dir, sample))
-        
-        sequences = self.sequence_cut(sample_array)
-        sequence = sequences[index-sum(self.nb_sequences_per_sample[:sample_idx+1])]
+        # features, labels = self[index]
+        sequence = np.concatenate((features.cpu().numpy(), labels.cpu().numpy()), axis=1)
         
         anim = self.animate(sequence, nb_frames, frame_offset)
                 
@@ -556,15 +552,241 @@ class PingDataset(Dataset):
                 
         return strokes
     
-    def train_validation_dataset(self, validation_size=0.25, n_samples=-1):
+    def train_validation_dataset(self, validation_size=0.25, n_samples=-1, shuffle=True):
 
-        if n_samples > len(self):
-            raise ValueError("n_samples cannot be greater than the dataset size")
+        if n_samples + math.ceil(n_samples*validation_size) > len(self):
+            raise ValueError("n_samples + math.ceil(n_samples*validation_size) cannot be greater than the dataset size")
             
-        train_idx, validation_idx = train_test_split(list(range(len(self))), test_size=validation_size)
-        train_dataset, validation_dataset = Subset(self, train_idx[:n_samples]), Subset(self, validation_idx[:int(n_samples*validation_size) if n_samples !=-1 else -1])
+        train_idx, validation_idx = train_test_split(list(range(len(self))), test_size=validation_size, shuffle=shuffle)
+        train_dataset, validation_dataset = Subset(self, train_idx[:n_samples]), Subset(self, validation_idx[:math.ceil(n_samples*validation_size) if n_samples !=-1 else -1])
         
         return train_dataset, validation_dataset
+    
+    def get_dataset_info(self):
+
+        stroke_count = 0
+        player_1_count = 0
+        player_2_count = 0
+        serve_count = 0
+        ball_pass_count = 0
+        point_count = 0
+        mistake_count = 0
+        
+        if self.void_let_serve:
+            let_serve_void_serve_count = 0
+        else:
+            let_serve_count = 0
+            void_serve_count = 0
+            
+        forehand_count = 0
+        backhand_count = 0
+            
+        for _, y in DataLoader(self, batch_size=512, shuffle=False):
+
+            stroke = (y.sum(axis=-1) > 0).int()
+            
+            player_1 = (y[:, :, 0] == 1).int().unsqueeze(-1)
+            player_2 = (y[:, :, 1] == 1).int().unsqueeze(-1)
+            serve = (y[:, :, 2] == 1).int().unsqueeze(-1)
+            ball_pass = (y[:, :, 3] == 1).int().unsqueeze(-1)
+            point = (y[:, :, 4] == 1).int().unsqueeze(-1)
+            mistake = (y[:, :, 5] == 1).int().unsqueeze(-1)
+            
+            if self.void_let_serve:
+                let_serve_void_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+            else:
+                let_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                void_serve = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 9] == 1).int().unsqueeze(-1)
+            
+            stroke_count += stroke.sum().item()
+            player_1_count += player_1.sum().item()
+            player_2_count += player_2.sum().item()
+            serve_count += serve.sum().item()
+            ball_pass_count += ball_pass.sum().item()
+            point_count += point.sum().item()
+            mistake_count += mistake.sum().item()
+            
+            if self.void_let_serve:
+                let_serve_void_serve_count += let_serve_void_serve.sum().item()
+            else:
+                let_serve_count += let_serve.sum().item()
+                void_serve_count += void_serve.sum().item()
+                
+            forehand_count += forehand.sum().item()
+            backhand_count += backhand.sum().item()
+            
+        print("Strokes : {:d}/{:d}, {:.2f} %".format(stroke_count, (len(self)*self.sequence_len), 100*stroke_count/(len(self)*self.sequence_len)))
+        print("Player 1 : {:d}/{:d}, {:.2f} %".format(player_1_count, (len(self)*self.sequence_len), 100*player_1_count/(len(self)*self.sequence_len)))
+        print("Player 2 : {:d}/{:d}, {:.2f} %".format(player_2_count, (len(self)*self.sequence_len), 100*player_2_count/(len(self)*self.sequence_len)))
+        print("Serve : {:d}/{:d}, {:.2f} %".format(serve_count, (len(self)*self.sequence_len), 100*serve_count/(len(self)*self.sequence_len)))
+        print("Ball pass : {:d}/{:d}, {:.2f} %".format(ball_pass_count, (len(self)*self.sequence_len), 100*ball_pass_count/(len(self)*self.sequence_len)))
+        print("Point : {:d}/{:d}, {:.2f} %".format(point_count, (len(self)*self.sequence_len), 100*point_count/(len(self)*self.sequence_len)))
+        print("Mistake : {:d}/{:d}, {:.2f} %".format(mistake_count, (len(self)*self.sequence_len), 100*mistake_count/(len(self)*self.sequence_len)))
+        
+        if self.void_let_serve:
+            print("Let serve or Void serve : {:d}/{:d}, {:.2f} %".format(let_serve_void_serve_count, (len(self)*self.sequence_len), 100*let_serve_void_serve_count/(len(self)*self.sequence_len)))
+        else:
+            print("Let serve : {:d}/{:d}, {:.2f} %".format(let_serve_count, (len(self)*self.sequence_len), 100*let_serve_count/(len(self)*self.sequence_len)))
+            print("Void serve : {:d}/{:d}, {:.2f} %".format(void_serve_count, (len(self)*self.sequence_len), 100*void_serve_count/(len(self)*self.sequence_len)))
+            
+        print("Forehand : {:d}/{:d}, {:.2f} %".format(forehand_count, (len(self)*self.sequence_len), 100*forehand_count/(len(self)*self.sequence_len)))
+        print("Backhand : {:d}/{:d}, {:.2f} %".format(backhand_count, (len(self)*self.sequence_len), 100*backhand_count/(len(self)*self.sequence_len)))
+        
+    def get_split_dataset_info(self, train_dataset, validation_dataset):
+
+        stroke_count = 0
+        player_1_count = 0
+        player_2_count = 0
+        serve_count = 0
+        ball_pass_count = 0
+        point_count = 0
+        mistake_count = 0
+        
+        if self.void_let_serve:
+            let_serve_void_serve_count = 0
+        else:
+            let_serve_count = 0
+            void_serve_count = 0
+            
+        forehand_count = 0
+        backhand_count = 0
+            
+        for _, y in DataLoader(train_dataset, batch_size=512, shuffle=False):
+
+            stroke = (y.sum(axis=-1) > 0).int()
+            
+            player_1 = (y[:, :, 0] == 1).int().unsqueeze(-1)
+            player_2 = (y[:, :, 1] == 1).int().unsqueeze(-1)
+            serve = (y[:, :, 2] == 1).int().unsqueeze(-1)
+            ball_pass = (y[:, :, 3] == 1).int().unsqueeze(-1)
+            point = (y[:, :, 4] == 1).int().unsqueeze(-1)
+            mistake = (y[:, :, 5] == 1).int().unsqueeze(-1)
+            
+            if self.void_let_serve:
+                let_serve_void_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+            else:
+                let_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                void_serve = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 9] == 1).int().unsqueeze(-1)
+            
+            stroke_count += stroke.sum().item()
+            player_1_count += player_1.sum().item()
+            player_2_count += player_2.sum().item()
+            serve_count += serve.sum().item()
+            ball_pass_count += ball_pass.sum().item()
+            point_count += point.sum().item()
+            mistake_count += mistake.sum().item()
+            
+            if self.void_let_serve:
+                let_serve_void_serve_count += let_serve_void_serve.sum().item()
+            else:
+                let_serve_count += let_serve.sum().item()
+                void_serve_count += void_serve.sum().item()
+                
+            forehand_count += forehand.sum().item()
+            backhand_count += backhand.sum().item()
+            
+        print("\n## Training ##")
+            
+        print("Strokes : {:d}/{:d}, {:.2f} %".format(stroke_count, (len(train_dataset)*self.sequence_len), 100*stroke_count/(len(train_dataset)*self.sequence_len)))
+        print("Player 1 : {:d}/{:d}, {:.2f} %".format(player_1_count, (len(train_dataset)*self.sequence_len), 100*player_1_count/(len(train_dataset)*self.sequence_len)))
+        print("Player 2 : {:d}/{:d}, {:.2f} %".format(player_2_count, (len(train_dataset)*self.sequence_len), 100*player_2_count/(len(train_dataset)*self.sequence_len)))
+        print("Serve : {:d}/{:d}, {:.2f} %".format(serve_count, (len(train_dataset)*self.sequence_len), 100*serve_count/(len(train_dataset)*self.sequence_len)))
+        print("Ball pass : {:d}/{:d}, {:.2f} %".format(ball_pass_count, (len(train_dataset)*self.sequence_len), 100*ball_pass_count/(len(train_dataset)*self.sequence_len)))
+        print("Point : {:d}/{:d}, {:.2f} %".format(point_count, (len(train_dataset)*self.sequence_len), 100*point_count/(len(train_dataset)*self.sequence_len)))
+        print("Mistake : {:d}/{:d}, {:.2f} %".format(mistake_count, (len(train_dataset)*self.sequence_len), 100*mistake_count/(len(train_dataset)*self.sequence_len)))
+        
+        if self.void_let_serve:
+            print("Let serve or Void serve : {:d}/{:d}, {:.2f} %".format(let_serve_void_serve_count, (len(train_dataset)*self.sequence_len), 100*let_serve_void_serve_count/(len(train_dataset)*self.sequence_len)))
+        else:
+            print("Let serve : {:d}/{:d}, {:.2f} %".format(let_serve_count, (len(train_dataset)*self.sequence_len), 100*let_serve_count/(len(train_dataset)*self.sequence_len)))
+            print("Void serve : {:d}/{:d}, {:.2f} %".format(void_serve_count, (len(train_dataset)*self.sequence_len), 100*void_serve_count/(len(train_dataset)*self.sequence_len)))
+            
+        print("Forehand : {:d}/{:d}, {:.2f} %".format(forehand_count, (len(train_dataset)*self.sequence_len), 100*forehand_count/(len(train_dataset)*self.sequence_len)))
+        print("Backhand : {:d}/{:d}, {:.2f} %".format(backhand_count, (len(train_dataset)*self.sequence_len), 100*backhand_count/(len(train_dataset)*self.sequence_len)))
+        
+        print("\n## Validation ##")
+        
+        validation_stroke_count = 0
+        player_1_count = 0
+        player_2_count = 0
+        serve_count = 0
+        ball_pass_count = 0
+        point_count = 0
+        mistake_count = 0
+        
+        if self.void_let_serve:
+            let_serve_void_serve_count = 0
+        else:
+            let_serve_count = 0
+            void_serve_count = 0
+            
+        forehand_count = 0
+        backhand_count = 0
+            
+        for _, y in DataLoader(validation_dataset, batch_size=512, shuffle=False):
+
+            stroke = (y.sum(axis=-1) > 0).int()
+            
+            player_1 = (y[:, :, 0] == 1).int().unsqueeze(-1)
+            player_2 = (y[:, :, 1] == 1).int().unsqueeze(-1)
+            serve = (y[:, :, 2] == 1).int().unsqueeze(-1)
+            ball_pass = (y[:, :, 3] == 1).int().unsqueeze(-1)
+            point = (y[:, :, 4] == 1).int().unsqueeze(-1)
+            mistake = (y[:, :, 5] == 1).int().unsqueeze(-1)
+            
+            if self.void_let_serve:
+                let_serve_void_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+            else:
+                let_serve = (y[:, :, 6] == 1).int().unsqueeze(-1)
+                void_serve = (y[:, :, 7] == 1).int().unsqueeze(-1)
+                forehand = (y[:, :, 8] == 1).int().unsqueeze(-1)
+                backhand = (y[:, :, 9] == 1).int().unsqueeze(-1)
+            
+            validation_stroke_count += stroke.sum().item()
+            player_1_count += player_1.sum().item()
+            player_2_count += player_2.sum().item()
+            serve_count += serve.sum().item()
+            ball_pass_count += ball_pass.sum().item()
+            point_count += point.sum().item()
+            mistake_count += mistake.sum().item()
+            
+            if self.void_let_serve:
+                let_serve_void_serve_count += let_serve_void_serve.sum().item()
+            else:
+                let_serve_count += let_serve.sum().item()
+                void_serve_count += void_serve.sum().item()
+                
+            forehand_count += forehand.sum().item()
+            backhand_count += backhand.sum().item()
+            
+        print("Strokes : {:d}/{:d}, {:.2f} %".format(validation_stroke_count, (len(validation_dataset)*self.sequence_len), 100*validation_stroke_count/(len(validation_dataset)*self.sequence_len)))
+        print("Player 1 : {:d}/{:d}, {:.2f} %".format(player_1_count, (len(validation_dataset)*self.sequence_len), 100*player_1_count/(len(validation_dataset)*self.sequence_len)))
+        print("Player 2 : {:d}/{:d}, {:.2f} %".format(player_2_count, (len(validation_dataset)*self.sequence_len), 100*player_2_count/(len(validation_dataset)*self.sequence_len)))
+        print("Serve : {:d}/{:d}, {:.2f} %".format(serve_count, (len(validation_dataset)*self.sequence_len), 100*serve_count/(len(validation_dataset)*self.sequence_len)))
+        print("Ball pass : {:d}/{:d}, {:.2f} %".format(ball_pass_count, (len(validation_dataset)*self.sequence_len), 100*ball_pass_count/(len(validation_dataset)*self.sequence_len)))
+        print("Point : {:d}/{:d}, {:.2f} %".format(point_count, (len(validation_dataset)*self.sequence_len), 100*point_count/(len(validation_dataset)*self.sequence_len)))
+        print("Mistake : {:d}/{:d}, {:.2f} %".format(mistake_count, (len(validation_dataset)*self.sequence_len), 100*mistake_count/(len(validation_dataset)*self.sequence_len)))
+        
+        if self.void_let_serve:
+            print("Let serve or Void serve : {:d}/{:d}, {:.2f} %".format(let_serve_void_serve_count, (len(validation_dataset)*self.sequence_len), 100*let_serve_void_serve_count/(len(validation_dataset)*self.sequence_len)))
+        else:
+            print("Let serve : {:d}/{:d}, {:.2f} %".format(let_serve_count, (len(validation_dataset)*self.sequence_len), 100*let_serve_count/(len(validation_dataset)*self.sequence_len)))
+            print("Void serve : {:d}/{:d}, {:.2f} %".format(void_serve_count, (len(validation_dataset)*self.sequence_len), 100*void_serve_count/(len(validation_dataset)*self.sequence_len)))
+            
+        print("Forehand : {:d}/{:d}, {:.2f} %".format(forehand_count, (len(validation_dataset)*self.sequence_len), 100*forehand_count/(len(validation_dataset)*self.sequence_len)))
+        print("Backhand : {:d}/{:d}, {:.2f} %\n".format(backhand_count, (len(validation_dataset)*self.sequence_len), 100*backhand_count/(len(validation_dataset)*self.sequence_len)))
+        
+        return stroke_count, len(train_dataset)*self.sequence_len, validation_stroke_count, len(validation_dataset)*self.sequence_len
         
     @staticmethod
     def transform_inputs(objects_points, rotate=True, scale_min_max=True):
@@ -582,7 +804,7 @@ class PingDataset(Dataset):
             objects_points[:, 1::3] = (objects_points[:, 1::3] - min_y)/(max_y - min_y)
         
         return objects_points                
-            
+    
     
 
 
