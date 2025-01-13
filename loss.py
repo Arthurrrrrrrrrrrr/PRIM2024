@@ -223,13 +223,20 @@ class Loss_1(nn.Module):
         self.w_0 = w_0
         self.w_1 = w_1
         self.stroke_identification = stroke_identification
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
 
     def forward(self, y_pred, y_target):
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
         
         y_stroke, y_player, y_hand, y_point, y_serve = adapt_target_to_output_1_no_void(y_target) if self.void_let_serve else adapt_target_to_output_1(y_target)
         y_pred_stroke, y_pred_player, y_pred_hand, y_pred_point, y_pred_serve = y_pred
         
         bce_stroke = bce(y_pred_stroke, y_stroke, self.w_0, self.w_1)
+        
         if self.stroke_identification :
             bce_player = bce(y_pred_player, y_player)
             bce_hand = bce(y_pred_hand, y_hand)
@@ -239,12 +246,17 @@ class Loss_1(nn.Module):
         
             sample_loss = bce_stroke + y_stroke * (bce_player + bce_hand + cce_point.unsqueeze(-1) + cce_serve.unsqueeze(-1))
             
+            self.temp_identification_loss = sample_loss.detach() - bce_stroke.detach()
+            self.temp_identification_loss = self.temp_identification_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+            
         else:
             sample_loss = bce_stroke
     
         # Sum over all batches and samples to get the total batch loss
         batch_loss = sample_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
         
+        self.temp_detection_loss = bce_stroke.detach().sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+    
         return batch_loss
     
 class Loss_1_with_logits(nn.Module):
@@ -255,22 +267,34 @@ class Loss_1_with_logits(nn.Module):
         self.void_let_serve = void_let_serve
         self.stroke_identification = stroke_identification
         
-        self.bce_stroke = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight]).to(DEVICE))
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
+        
+        self.bce_stroke = torch.nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([pos_weight]).to(DEVICE))
+        self.bce = torch.nn.BCEWithLogitsLoss(reduction='none')
+        self.cce = torch.nn.CrossEntropyLoss(reduction='none')
 
     def forward(self, y_pred, y_target):
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
         
         y_stroke, y_player, y_hand, y_point, y_serve = adapt_target_to_output_1_no_void(y_target) if self.void_let_serve else adapt_target_to_output_1(y_target)
         y_pred_stroke, y_pred_player, y_pred_hand, y_pred_point, y_pred_serve = y_pred
         
         bce_stroke = self.bce_stroke(y_pred_stroke, y_stroke)
+        
         if self.stroke_identification :
-            bce_player = bce(y_pred_player, y_player)
-            bce_hand = bce(y_pred_hand, y_hand)
-            
-            cce_point = cce(y_pred_point, y_point)
-            cce_serve = cce(y_pred_serve, y_serve)
+            bce_player = self.bce(y_pred_player, y_player)
+            bce_hand = self.bce(y_pred_hand, y_hand)
+
+            cce_point = self.cce(y_pred_point.permute(0, 2, 1), y_point)
+            cce_serve = self.cce(y_pred_serve.permute(0, 2, 1), y_serve)
         
             sample_loss = bce_stroke + y_stroke * (bce_player + bce_hand + cce_point.unsqueeze(-1) + cce_serve.unsqueeze(-1))
+            
+            self.temp_identification_loss = sample_loss.detach() - bce_stroke.detach()
+            self.temp_identification_loss = self.temp_identification_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
             
         else:
             sample_loss = bce_stroke
@@ -278,6 +302,8 @@ class Loss_1_with_logits(nn.Module):
         # Sum over all batches and samples to get the total batch loss
         batch_loss = sample_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
         
+        self.temp_detection_loss = bce_stroke.detach().sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+
         return batch_loss
         
 

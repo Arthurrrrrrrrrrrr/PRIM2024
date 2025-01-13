@@ -171,12 +171,12 @@ def adapt_output_2(y_stroke, y_comb, void_let_serve=True):
 
 class Model_1(nn.Module):
 
-    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, stroke_logits=False, return_as_one: bool=False, void_let_serve: bool=True):
+    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, with_logits=False, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_1, self).__init__()
         
         self.return_as_one = return_as_one
         self.void_let_serve = void_let_serve
-        self.stroke_logits = stroke_logits
+        self.with_logits = with_logits
         
         self.linear_embedding = nn.Linear(in_features=93, out_features=d_model)
         
@@ -201,15 +201,18 @@ class Model_1(nn.Module):
         x = self.linear_embedding(x)
         x = self.transformer_encoder(x)
         
-        if self.stroke_logits:
+        if self.with_logits:
             y_stroke = self.linear_stroke(x)
+            y_player = self.linear_player(x)
+            y_hand = self.linear_hand(x)
+            y_point = self.linear_point(x)
+            y_serve = self.linear_serve(x)
         else:
             y_stroke = self.sigmoid(self.linear_stroke(x))
-            
-        y_player = self.sigmoid(self.linear_player(x))
-        y_hand = self.sigmoid(self.linear_hand(x))
-        y_point = self.softmax(self.linear_point(x))
-        y_serve = self.softmax(self.linear_serve(x))
+            y_player = self.sigmoid(self.linear_player(x))
+            y_hand = self.sigmoid(self.linear_hand(x))
+            y_point = self.softmax(self.linear_point(x))
+            y_serve = self.softmax(self.linear_serve(x))
         
         if self.return_as_one:
             

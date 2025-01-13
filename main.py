@@ -10,6 +10,7 @@ Created on Fri Nov  1 14:06:18 2024
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -25,112 +26,183 @@ from accuracy import Accuracy
 from train_validation import train, evaluate_accuracy, evaluate_loss
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-void_let_serve = True
-
-batch_size = 256
-sequence_len = 60
-
 torch.cuda.empty_cache()
 
-# dataset = PingDataset(cvat_xml_dir='dataset', sequence_len=30, data_samples_dir='dataset/data_samples', void_let_serve=void_let_serve)
-dataset = PingDataset(npy_dir='dataset/data_samples', sequence_len=sequence_len, void_let_serve=void_let_serve)
+void_let_serve = True
+batch_size = 128
+sequence_len = 60
 
-train_dataset, validation_dataset = dataset.train_validation_dataset(n_samples=-1, shuffle=True)
+n_samples = 4096
 
-train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-validation_dataloader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+d_model = 128
+n_head = 4
+num_layers = 4
+with_logits = True
 
-train_stroke_count, train_nb_frames, validation_stroke_count, validation_nb_frames =  dataset.get_split_dataset_info(train_dataset, validation_dataset)
+n_epochs = 10
 
-# model = Model_1(sequence_len=sequence_len, return_as_one=True).to(DEVICE)
-# x_test = torch.rand(sequence_len, 93).to(DEVICE)
-# print(model(x_test))
+create_dataset = False
+load_dataset = True
+cvat_xml_dir = 'dataset'
+data_samples_dir = 'dataset/data_samples'
 
-model = torch.load('models/model=1_d=128_h=4_n=4_bs=256_ns=-1_sl=60_shuffle_loss=stroke_detec+weighted_each_epoch=20+20+20+20+200_ams_grad.pt')
+load_model = False
+load_model_dir = 'training/training_model=1_d=128_n=4_h=4_ns=-1_bs=128_task=detection_loss=weighted_+lrscheduler/'
 
-# model = Model_1(sequence_len=sequence_len, d_model=128, n_head=4, num_layers=4,
-#                 stroke_logits=False, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
-# # x = torch.rand(batch_size, sequence_len, 93).to(DEVICE)
-# # y_pred = model(x)
-# # y_target = adapt_1_no_void(torch.rand(batch_size, sequence_len, 30).to(DEVICE))
-# # print(adapt_output_1(*y_pred, void_let_serve).shape)
-# # print([y_pred[i].shape for i in range(len(y_pred))])
-# # print([y_target[i].shape for i in range(len(y_target))])
+load_training = False
+load_training_dir = 'training/training_model=1_d=128_n=4_h=4_ns=-1_bs=128_task=identification_loss=logits+weighted/'
 
-# # # model = Model_2(sequence_len=sequence_len, return_as_one=True).to(DEVICE)
-# # # x_test = torch.rand(sequence_len, 93).to(DEVICE)
-# # # print(model(x_test))
+save_training = True
+save_training_dir = 'training/training_model=1_d=128_n=4_h=4_ns=4096_bs=128_task=identification_loss=logits+weighted/'
 
-# # model = Model_2(sequence_len=sequence_len, d_model=128, n_head=8, num_layers=4, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
-# # x = torch.rand(batch_size, sequence_len, 93).to(DEVICE)
-# # y_pred = model(x)
-# # y_target = adapt_2_no_void(torch.rand(batch_size, sequence_len, 30).to(DEVICE))
-# # print(adapt_output_2(*y_pred, void_let_serve).shape)
-# # print([y_pred[i].shape for i in range(len(y_pred))])
-# # print([y_target[i].shape for i in range(len(y_target))])
+weight_loss = True
+stroke_identification = True
 
+use_scheduler = False
+clip_grad = False
 
-# # print(summary(model, input_size=(batch_size, sequence_len, 93)))
+get_data_info = True
 
-# ### TRAINING
+compute_accuracy = True
 
-# optimizer = torch.optim.Adam(model.parameters(), amsgrad=True)
-# # # # optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+concat_losses = True
 
-# pos_weight = (train_nb_frames-train_stroke_count)/train_stroke_count if train_stroke_count !=0 else 1
+plot_losses = False
 
-# loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=False, w_1=pos_weight)
+if save_training:
+    if not os.path.exists(save_training_dir): 
+        os.makedirs(save_training_dir)
 
-# # loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=False, pos_weight=pos_weight)
-
-
-# # # # loss_function = Loss_2(void_let_serve=void_let_serve)
-
-# # # # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-
-# train_loss_list, validation_loss_list, lr_list, best_model = train(model=model,
-#                                                                    loss_function=loss_function,
-#                                                                    optimizer=optimizer,
-#                                                                    n_epochs=30,
-#                                                                    training_dataloader=train_dataloader, validation_dataloader=validation_dataloader,
-#                                                                    scheduler=None,
-#                                                                    save_model=True, model_path='models/model=1_d=128_h=4_n=4_bs=256_ns=-1_sl=60_shuffle_loss=stroke_detec+weighted_each_epoch=20+20+20+20+200+30_ams_grad.pt',
-#                                                                    save_fig=True, fig_path='fig_temp/model=1_d=128_h=4_n=4_bs=256_ns=-1_sl=60_shuffle_loss=stroke_detec+weighted_each_epoch=20+20+20+20+200+30_ams_grad')
-
-
-accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
-evaluate_accuracy(model, validation_dataloader, accuracy)
-
-global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = accuracy.get_metrics()
-
-accuracy.display_metrics()
-
-# if best_model is not None:
-#     accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
-#     evaluate_accuracy(best_model, validation_dataloader, accuracy)
+if load_training:
+    data = torch.load(load_training_dir+'data')
+    void_let_serve = data['void_let_serve']
+    batch_size = data['batch_size']
+    sequence_len = data['sequence_len']
+    training_dataset = data['training_dataset']
+    validation_dataset = data['validation_dataset']
     
-#     best_stroke_detection, best_stroke_identification = accuracy.metrics()
+    checkpoint = torch.load(load_training_dir+'checkpoint')
+    epoch = checkpoint['epoch']
+    old_training_loss_list = checkpoint['training_loss_list']
+    old_validation_loss_list = checkpoint['validation_loss_list']
+    old_lr_list = checkpoint['lr_list']
+    model = checkpoint['model']
+    best_model = checkpoint['best_model']
+    optimizer = checkpoint['optimizer']
+    if 'detection_loss_list' in checkpoint.keys() and 'identification_loss_list' in checkpoint.keys():
+        old_detection_loss_list = checkpoint['detection_loss_list']
+        old_identification_loss_list = checkpoint['identification_loss_list']
+    else:
+        old_detection_loss_list = []
+        old_identification_loss_list = []
+    
+    # # Force value
+    # batch_size = 1024
+    
+else:
+    if load_model:
+        checkpoint = torch.load(load_model_dir+'checkpoint')
+        model = checkpoint['best_model']
+    else:
+        model = Model_1(sequence_len=sequence_len, d_model=d_model, n_head=n_head, num_layers=num_layers,
+                        with_logits=with_logits, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
+    optimizer = torch.optim.Adam(model.parameters(), amsgrad=True)
+    
+if not concat_losses or not load_training:
+    old_training_loss_list = []
+    old_validation_loss_list = []
+    old_lr_list = []
+    old_detection_loss_list = []
+    old_identification_loss_list = []
+    
+if create_dataset:
+    dataset = PingDataset(cvat_xml_dir=cvat_xml_dir, sequence_len=sequence_len, data_samples_dir=data_samples_dir, void_let_serve=void_let_serve)
+    
+if load_dataset:
+    dataset = PingDataset(npy_dir=data_samples_dir, sequence_len=sequence_len, void_let_serve=void_let_serve)
 
-# fig, ax1 = plt.subplots(figsize=(10, 6))
-# ax1.plot(train_loss_list, label='Training Loss', color='tab:blue', marker='o')
-# ax1.plot(validation_loss_list, label='Validation Loss', color='tab:orange', marker='o')
-# ax1.set_xlabel('Epochs')
-# ax1.set_ylabel('Loss', color='black')
-# ax1.tick_params(axis='y', labelcolor='black')
-# ax1.legend(loc='upper left')
+if create_dataset or load_dataset:
+    training_dataset, validation_dataset = dataset.train_validation_dataset(n_samples=n_samples, shuffle=True)
 
-# ax2 = ax1.twinx()
-# ax2.plot(lr_list, label='Learning Rate', color='tab:green', linestyle='--', marker='x')
-# ax2.set_ylabel('Learning Rate', color='tab:green')
-# ax2.tick_params(axis='y', labelcolor='tab:green')
-# ax2.legend(loc='upper right')
-# ax2.set_yscale('log')
+if save_training:
+    data = {'void_let_serve': void_let_serve,
+            'batch_size': batch_size,
+            'sequence_len': sequence_len,
+            'training_dataset': training_dataset,
+            'validation_dataset': validation_dataset}
+    torch.save(data, save_training_dir+'data')
+ 
+training_dataloader = DataLoader(dataset=training_dataset, batch_size=batch_size, shuffle=False)
+validation_dataloader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=False)
 
-# plt.title('Training and Validation Loss with Learning Rate')
-# ax1.grid(True, linestyle='--', alpha=0.7)
+if weight_loss or get_data_info:
+    if not create_dataset and not load_dataset:
+        dataset = PingDataset(npy_dir=data_samples_dir, sequence_len=sequence_len, void_let_serve=void_let_serve)
+    train_stroke_count, train_nb_frames, validation_stroke_count, validation_nb_frames = dataset.get_split_dataset_info(training_dataset, validation_dataset)
 
-# plt.tight_layout()
-# plt.show()
+if weight_loss:
+    if with_logits:
+        pos_weight = (train_nb_frames-train_stroke_count)/train_stroke_count if train_stroke_count !=0 else 1
+        loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification, pos_weight=pos_weight)
+    else:
+        pos_weight = (train_nb_frames-train_stroke_count)/train_stroke_count if train_stroke_count !=0 else 1
+        loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification, w_1=pos_weight)
+else:
+    if with_logits:
+        loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
+    else:
+        loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
 
-# train_loss, validation_loss = evaluate_loss(model, loss_function, train_dataloader, validation_dataloader)
+if use_scheduler :
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=6, threshold=1e-3)
+else:
+    scheduler = None
+
+training_loss_list, validation_loss_list, lr_list, best_model, detection_loss_list, identification_loss_list = train(model=model, loss_function=loss_function, optimizer=optimizer,
+                                                                                                                    n_epochs=n_epochs,
+                                                                                                                    training_dataloader=training_dataloader,
+                                                                                                                    validation_dataloader=validation_dataloader,
+                                                                                                                    save_best_model=True, best_model_path=save_training_dir+'best_model',
+                                                                                                                    save_fig=True, fig_path=save_training_dir+'fig',
+                                                                                                                    scheduler=scheduler,
+                                                                                                                    save_epoch=save_training, checkpoint_path=save_training_dir+'checkpoint',
+                                                                                                                    training_loss_list=old_training_loss_list,
+                                                                                                                    validation_loss_list=old_validation_loss_list,
+                                                                                                                    learning_rate_list=old_lr_list,
+                                                                                                                    clip_grad=clip_grad,
+                                                                                                                    detection_loss_list=old_detection_loss_list, identification_loss_list=old_identification_loss_list)
+
+if compute_accuracy:
+    accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
+    evaluate_accuracy(model, validation_dataloader, accuracy)
+    global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = accuracy.get_metrics()
+    accuracy.display_metrics()
+
+    if best_model is not None:
+        best_accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
+        evaluate_accuracy(best_model, validation_dataloader, best_accuracy)
+        global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = best_accuracy.get_metrics()
+        best_accuracy.display_metrics()
+
+if plot_losses:
+    
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax1.plot(training_loss_list, label='Training Loss', color='tab:blue', marker='o')
+    ax1.plot(validation_loss_list, label='Validation Loss', color='tab:orange', marker='o')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss', color='black')
+    ax1.tick_params(axis='y', labelcolor='black')
+    ax1.legend(loc='upper left')
+    
+    ax2 = ax1.twinx()
+    ax2.plot(lr_list, label='Learning Rate', color='tab:green', linestyle='--', marker='x')
+    ax2.set_ylabel('Learning Rate', color='tab:green')
+    ax2.tick_params(axis='y', labelcolor='tab:green')
+    ax2.legend(loc='upper right')
+    # ax2.set_yscale('log')
+    
+    plt.title('Training and Validation Loss with Learning Rate')
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.tight_layout()
+    plt.show()
