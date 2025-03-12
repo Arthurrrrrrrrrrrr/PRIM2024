@@ -5,6 +5,7 @@ Created on Sun Nov 10 11:42:29 2024
 @author: anuvo
 """
 
+import math
 import torch
 import torch.nn as nn
 import numpy as np
@@ -169,6 +170,23 @@ def adapt_output_2(y_stroke, y_comb, void_let_serve=True):
     return output
     
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # Shape: (1, max_len, d_model)
+
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :]
+
+
 class Model_1(nn.Module):
 
     def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, with_logits=False, return_as_one: bool=False, void_let_serve: bool=True):
@@ -179,6 +197,7 @@ class Model_1(nn.Module):
         self.with_logits = with_logits
         
         self.linear_embedding = nn.Linear(in_features=93, out_features=d_model)
+        # self.positional_encoding = PositionalEncoding(d_model, max_len=sequence_len)
         
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=n_head)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
@@ -199,6 +218,7 @@ class Model_1(nn.Module):
     def forward(self, x):
         
         x = self.linear_embedding(x)
+        # x = self.positional_encoding(x)
         x = self.transformer_encoder(x)
         
         if self.with_logits:
@@ -222,11 +242,12 @@ class Model_1(nn.Module):
     
 class Model_2(nn.Module):
 
-    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, return_as_one: bool=False, void_let_serve: bool=True):
+    def __init__(self, sequence_len: int, n_head: int, d_model: int, num_layers: int, with_logits=False, return_as_one: bool=False, void_let_serve: bool=True):
         super(Model_2, self).__init__()
 
         self.return_as_one = return_as_one
         self.void_let_serve = void_let_serve
+        self.with_logits = with_logits
         
         self.linear_embedding = nn.Linear(in_features=93, out_features=d_model)
 
@@ -247,8 +268,13 @@ class Model_2(nn.Module):
         
         x = self.linear_embedding(x)
         x = self.transformer_encoder(x)
-        y_stroke = self.sigmoid(self.linear_stroke(x))
-        y_comb = self.softmax(self.linear_comb(x))
+        
+        if self.with_logits:
+            y_stroke = self.linear_stroke(x)
+            y_comb = self.linear_comb(x)
+        else:
+            y_stroke = self.sigmoid(self.linear_stroke(x))
+            y_comb = self.softmax(self.linear_comb(x))
         
         if self.return_as_one:
             

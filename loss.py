@@ -258,7 +258,8 @@ class Loss_1(nn.Module):
         self.temp_detection_loss = bce_stroke.detach().sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
     
         return batch_loss
-    
+
+
 class Loss_1_with_logits(nn.Module):
     
     def __init__(self, void_let_serve=True, pos_weight: float=1, stroke_identification=True):
@@ -318,7 +319,13 @@ class Loss_2(nn.Module):
         self.void_let_serve = void_let_serve
         self.stroke_identification = stroke_identification
         
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
+        
     def forward(self, y_pred, y_target):
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
         
         y_stroke, y_comb = adapt_target_to_output_2_no_void(y_target) if self.void_let_serve else adapt_target_to_output_2(y_target)
         y_pred_stroke, y_pred_comb = y_pred
@@ -330,6 +337,9 @@ class Loss_2(nn.Module):
             cce_comb = cce(y_pred_comb, y_comb)
             # Now, element-wise sum of BCE and CCE for each sample
             sample_loss = bce_stroke + y_stroke * cce_comb.unsqueeze(-1)
+            
+            self.temp_identification_loss = sample_loss.detach() - bce_stroke.detach()
+            self.temp_identification_loss = self.temp_identification_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
         
         else:
             sample_loss = bce_stroke
@@ -337,4 +347,49 @@ class Loss_2(nn.Module):
         # Sum over all batches and samples to get the total batch loss
         batch_loss = sample_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
         
+        self.temp_detection_loss = bce_stroke.detach().sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+        
+        return batch_loss
+
+
+class Loss_2_with_logits(nn.Module):
+    
+    def __init__(self, void_let_serve=True, pos_weight: float=1, stroke_identification=True):
+        super(Loss_2_with_logits, self).__init__()
+        
+        self.void_let_serve = void_let_serve
+        self.stroke_identification = stroke_identification
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
+        
+        self.bce = torch.nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor([pos_weight]).to(DEVICE))
+        self.cce = torch.nn.CrossEntropyLoss(reduction='none')
+
+    def forward(self, y_pred, y_target):
+        
+        self.temp_detection_loss = 0
+        self.temp_identification_loss = 0
+        
+        y_stroke, y_comb = adapt_target_to_output_2_no_void(y_target) if self.void_let_serve else adapt_target_to_output_2(y_target)
+        y_pred_stroke, y_pred_comb = y_pred
+        
+        bce_stroke = self.bce(y_pred_stroke, y_stroke)
+        
+        if self.stroke_identification :
+            cce_comb = self.cce(y_pred_comb.permute(0, 2, 1), y_comb)
+        
+            sample_loss = bce_stroke + y_stroke * cce_comb.unsqueeze(-1)
+            
+            self.temp_identification_loss = sample_loss.detach() - bce_stroke.detach()
+            self.temp_identification_loss = self.temp_identification_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+            
+        else:
+            sample_loss = bce_stroke
+    
+        # Sum over all batches and samples to get the total batch loss
+        batch_loss = sample_loss.sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+        
+        self.temp_detection_loss = bce_stroke.detach().sum() / (y_pred_stroke.shape[0] * y_pred_stroke.shape[1])
+
         return batch_loss

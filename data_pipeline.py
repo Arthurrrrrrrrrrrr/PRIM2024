@@ -411,33 +411,52 @@ class PingDataset(Dataset):
         
         plt.close()
         
-    def animate_sample(self, file: str, destination_dir: str, nb_frames: int=90, frame_offset: int=0, save_mp4: bool=True, save_gif: bool=False):
+    def animate_sample(self, destination_dir: str, data: np.ndarray=None, infered_labels: np.ndarray=None, file: str=None, nb_frames: int=90, frame_offset: int=0, save_mp4: bool=True, save_gif: bool=False):
         
-        sample_array = np.load(os.path.join(self.npy_dir, file))
+        if file is not None:
         
-        if nb_frames>sample_array.shape[0]:
-            raise ValueError("nb_frames of {:d} cannot be greater than sample length of {:d}."
-                             .format(nb_frames, sample_array.shape[0]))
+            sample_array = np.load(os.path.join(self.npy_dir, file))
+        
+            if nb_frames>sample_array.shape[0]:
+                raise ValueError("nb_frames of {:d} cannot be greater than sample length of {:d}."
+                                 .format(nb_frames, sample_array.shape[0]))
+                
+            elif nb_frames+frame_offset>sample_array.shape[0]:
+                raise ValueError("nb_frames + frame_offset of {:d} cannot be greater than sample length of {:d}."
+                                 .format(nb_frames+frame_offset, sample_array.shape[0]))
+                
+            anim = self.animate(sample_array, nb_frames, frame_offset)
             
-        elif nb_frames+frame_offset>sample_array.shape[0]:
-            raise ValueError("nb_frames + frame_offset of {:d} cannot be greater than sample length of {:d}."
-                             .format(nb_frames+frame_offset, sample_array.shape[0]))
+            plt.rcParams['animation.ffmpeg_path'] ='FFmpeg\\bin\\ffmpeg.exe'
             
-        anim = self.animate(sample_array, nb_frames, frame_offset)
+            if save_mp4:
+                FFwriter=animation.FFMpegWriter(fps=30)
+                anim.save(os.path.join(destination_dir, file.split('.')[0]+str(random.randint(100, 999))+'_animated.mp4'), writer=FFwriter) 
+            
+            if save_gif:
+                FFwriter=animation.FFMpegWriter(fps=30)
+                anim.save(os.path.join(destination_dir, file.split('.')[0]+str(random.randint(100, 999))+'_animated.gif'), writer=FFwriter)
+            
+            plt.close()
+            
+        elif data is not None:
+            
+            anim = self.animate(data=data, nb_frames=data.shape[0], frame_offset=frame_offset, infered_labels=infered_labels)
+            
+            plt.rcParams['animation.ffmpeg_path'] ='FFmpeg\\bin\\ffmpeg.exe'
+            
+            if save_mp4:
+                FFwriter=animation.FFMpegWriter(fps=30)
+                anim.save(os.path.join(destination_dir, 'data_'+str(random.randint(100, 999))+'_animated.mp4'), writer=FFwriter) 
+            
+            if save_gif:
+                FFwriter=animation.FFMpegWriter(fps=30)
+                anim.save(os.path.join(destination_dir, 'data_'+str(random.randint(100, 999))+'_animated.gif'), writer=FFwriter)
+            
+            plt.close()
+            
         
-        plt.rcParams['animation.ffmpeg_path'] ='FFmpeg\\bin\\ffmpeg.exe'
-        
-        if save_mp4:
-            FFwriter=animation.FFMpegWriter(fps=30)
-            anim.save(os.path.join(destination_dir, file.split('.')[0]+str(random.randint(100, 999))+'_animated.mp4'), writer=FFwriter) 
-        
-        if save_gif:
-            FFwriter=animation.FFMpegWriter(fps=30)
-            anim.save(os.path.join(destination_dir, file.split('.')[0]+str(random.randint(100, 999))+'_animated.gif'), writer=FFwriter)
-        
-        plt.close()
-        
-    def animate(self, data: np.ndarray, nb_frames: int, frame_offset: int):
+    def animate(self, data: np.ndarray, nb_frames: int, frame_offset: int, infered_labels: np.ndarray=None):
         
         sample = data[:, 0:2]
         
@@ -462,10 +481,15 @@ class PingDataset(Dataset):
         
         scat = ax.scatter([], [], color=ball_color)
         lines = [ax.add_line(mpl.lines.Line2D([], [], color=lines_colors[i])) for i in range(n_2D_lines)]
-        text = ax.text(0.99, 0.99 , '',
+        text = ax.text(0.99, 0.99, '',
                 va="top",
                 ha="right",
                 transform=ax.transAxes)
+        
+        text_format = 'Target :\n{target}\nPrediction :\n{prediction}'
+        
+        self.target_temp = ''
+        self.prediction_temp  = ''
         
         def init():
             scat.set_offsets(np.c_[[], []])
@@ -531,12 +555,21 @@ class PingDataset(Dataset):
             lines[29].set_data([sample[frame, 56], sample[frame, 58]], [sample[frame, 57], sample[frame, 59]])
             lines[30].set_data([sample[frame, 58], sample[frame, 60]], [sample[frame, 59], sample[frame, 61]])
             lines[31].set_data([sample[frame, 60], sample[frame, 54]], [sample[frame, 61], sample[frame, 55]])
-
+            
             #strokes
             strokes = self.strokes_vector_to_text(sample[frame, -self.n_strokes:])
             if len(strokes)!=0:
-                text.set_text('\n'.join(strokes))
-
+                self.target_temp = '\n'.join(strokes)
+                self.prediction_temp = ' '
+                text.set_text(text_format.format(target=self.target_temp, prediction=self.prediction_temp))
+            
+            #infered strokes
+            if infered_labels is not None:
+                strokes = self.strokes_vector_to_text(infered_labels[frame, -self.n_strokes:])
+                if len(strokes)!=0:
+                    self.prediction_temp = '\n'.join(strokes)
+                    text.set_text(text_format.format(target=self.target_temp, prediction=self.prediction_temp))
+                        
             return scat, *lines
         
         anim = animation.FuncAnimation(fig, update, frames=nb_frames, init_func=init, blit=True)

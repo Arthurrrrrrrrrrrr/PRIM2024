@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data_pipeline import PingDataset
 from model import Model_1, Model_2, adapt_output_1, adapt_output_2
-from loss import Loss_1, Loss_1_with_logits, Loss_2, adapt_target_to_output_1_no_void, adapt_target_to_output_2_no_void
+from loss import Loss_1, Loss_1_with_logits, Loss_2, Loss_2_with_logits, adapt_target_to_output_1_no_void, adapt_target_to_output_2_no_void
 from accuracy import Accuracy
 from train_validation import train, evaluate_accuracy, evaluate_loss
 
@@ -32,28 +32,32 @@ void_let_serve = True
 batch_size = 128
 sequence_len = 60
 
-n_samples = 4096
+n_samples = -1
+
+model_num = 1
 
 d_model = 128
 n_head = 4
 num_layers = 4
 with_logits = True
 
-n_epochs = 10
+n_epochs = 1
+
+learning_rate = 1e-4
 
 create_dataset = False
-load_dataset = True
+load_dataset = False
 cvat_xml_dir = 'dataset'
 data_samples_dir = 'dataset/data_samples'
 
 load_model = False
-load_model_dir = 'training/training_model=1_d=128_n=4_h=4_ns=-1_bs=128_task=detection_loss=weighted_+lrscheduler/'
+load_model_dir = 'training_big/training_model=1_d=256_n=4_h=4_ns=-1_bs=128_task=identification_loss=logits+weighted_scheduler_2/'
 
-load_training = False
-load_training_dir = 'training/training_model=1_d=128_n=4_h=4_ns=-1_bs=128_task=identification_loss=logits+weighted/'
+load_training = True
+load_training_dir = 'training_clean/training_model=1_d=128_n=4_h=4_ns=-1_bs=128_task=identification_loss=logits+weighted_lrscheduler_v2/'
 
-save_training = True
-save_training_dir = 'training/training_model=1_d=128_n=4_h=4_ns=4096_bs=128_task=identification_loss=logits+weighted/'
+save_training = False
+save_training_dir = ''
 
 weight_loss = True
 stroke_identification = True
@@ -80,6 +84,8 @@ if load_training:
     sequence_len = data['sequence_len']
     training_dataset = data['training_dataset']
     validation_dataset = data['validation_dataset']
+    with_logits = data['with_logits']
+    model_num = data['model_num']
     
     checkpoint = torch.load(load_training_dir+'checkpoint')
     epoch = checkpoint['epoch']
@@ -104,9 +110,13 @@ else:
         checkpoint = torch.load(load_model_dir+'checkpoint')
         model = checkpoint['best_model']
     else:
-        model = Model_1(sequence_len=sequence_len, d_model=d_model, n_head=n_head, num_layers=num_layers,
-                        with_logits=with_logits, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
-    optimizer = torch.optim.Adam(model.parameters(), amsgrad=True)
+        if model_num == 1:
+            model = Model_1(sequence_len=sequence_len, d_model=d_model, n_head=n_head, num_layers=num_layers,
+                            with_logits=with_logits, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
+        elif model_num == 2:
+            model = Model_2(sequence_len=sequence_len, d_model=d_model, n_head=n_head, num_layers=num_layers,
+                            with_logits=with_logits, return_as_one=False, void_let_serve=void_let_serve).to(DEVICE)
+    optimizer = torch.optim.Adam(model.parameters(), amsgrad=True, lr=learning_rate)
     
 if not concat_losses or not load_training:
     old_training_loss_list = []
@@ -129,9 +139,11 @@ if save_training:
             'batch_size': batch_size,
             'sequence_len': sequence_len,
             'training_dataset': training_dataset,
-            'validation_dataset': validation_dataset}
+            'validation_dataset': validation_dataset,
+            'model_num': model_num,
+            'with_logits': with_logits}
     torch.save(data, save_training_dir+'data')
- 
+
 training_dataloader = DataLoader(dataset=training_dataset, batch_size=batch_size, shuffle=False)
 validation_dataloader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=False)
 
@@ -143,18 +155,30 @@ if weight_loss or get_data_info:
 if weight_loss:
     if with_logits:
         pos_weight = (train_nb_frames-train_stroke_count)/train_stroke_count if train_stroke_count !=0 else 1
-        loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification, pos_weight=pos_weight)
+        if model_num == 1:
+            loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification, pos_weight=pos_weight)
+        elif model_num == 2:
+            loss_function = Loss_2_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification, pos_weight=pos_weight)
     else:
         pos_weight = (train_nb_frames-train_stroke_count)/train_stroke_count if train_stroke_count !=0 else 1
-        loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification, w_1=pos_weight)
+        if model_num == 1:
+            loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification, w_1=pos_weight)
+        elif model_num == 2:
+            loss_function = Loss_2(void_let_serve=void_let_serve, stroke_identification=stroke_identification, w_1=pos_weight)
 else:
     if with_logits:
-        loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
+        if model_num == 1:
+            loss_function = Loss_1_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
+        elif model_num == 2:
+            loss_function = Loss_2_with_logits(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
     else:
-        loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
+        if model_num == 1:
+            loss_function = Loss_1(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
+        elif model_num == 2:
+            loss_function = Loss_2(void_let_serve=void_let_serve, stroke_identification=stroke_identification)
 
 if use_scheduler :
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=6, threshold=1e-3)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2, threshold=1e-1)
 else:
     scheduler = None
 
@@ -162,8 +186,8 @@ training_loss_list, validation_loss_list, lr_list, best_model, detection_loss_li
                                                                                                                     n_epochs=n_epochs,
                                                                                                                     training_dataloader=training_dataloader,
                                                                                                                     validation_dataloader=validation_dataloader,
-                                                                                                                    save_best_model=True, best_model_path=save_training_dir+'best_model',
-                                                                                                                    save_fig=True, fig_path=save_training_dir+'fig',
+                                                                                                                    save_best_model=save_training, best_model_path=save_training_dir+'best_model',
+                                                                                                                    save_fig=save_training, fig_path=save_training_dir+'fig',
                                                                                                                     scheduler=scheduler,
                                                                                                                     save_epoch=save_training, checkpoint_path=save_training_dir+'checkpoint',
                                                                                                                     training_loss_list=old_training_loss_list,
@@ -175,13 +199,13 @@ training_loss_list, validation_loss_list, lr_list, best_model, detection_loss_li
 if compute_accuracy:
     accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
     evaluate_accuracy(model, validation_dataloader, accuracy)
-    global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = accuracy.get_metrics()
+    global_simple_accuracy, by_frame_simple_accuracy, global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = accuracy.get_metrics()
     accuracy.display_metrics()
 
     if best_model is not None:
         best_accuracy = Accuracy(sequence_len=sequence_len, void_let_serve=void_let_serve)
         evaluate_accuracy(best_model, validation_dataloader, best_accuracy)
-        global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = best_accuracy.get_metrics()
+        global_simple_accuracy, by_frame_simple_accuracy, global_detection_precision, global_detection_recall, by_frame_detection_precision, by_frame_detection_recall, global_identification_precision, global_identification_recall, by_frame_identification_precision, by_frame_identification_recall = best_accuracy.get_metrics()
         best_accuracy.display_metrics()
 
 if plot_losses:

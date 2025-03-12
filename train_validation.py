@@ -115,12 +115,13 @@ def train(model: torch.nn.Module, loss_function: torch.nn.Module, optimizer: tor
             validation_loss_sum /= len(validation_dataloader)
             validation_loss_list.append(validation_loss_sum)
             
-            if epoch > 1 and training_loss_list[-1] < best_training_loss and not math.isnan(training_loss_list[-1]):
-                best_training_loss = training_loss_list[-1]
-                best_model = model
-            
-                if save_best_model:
-                    torch.save(model, best_model_path)
+            if epoch > 1 and training_loss_list[-1] < best_training_loss:
+                if not math.isnan(training_loss_list[-1]):
+                    best_training_loss = training_loss_list[-1]
+                    best_model = model
+                
+                    if save_best_model:
+                        torch.save(model, best_model_path)
             
             if scheduler is not None:
                 learning_rate_list.append(scheduler.get_last_lr()[0])
